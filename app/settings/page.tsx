@@ -295,11 +295,32 @@ export default function SettingsPage() {
             </p>
 
             <p>
-              <strong style={{ color: '#a1a1aa' }}>3.</strong> When a customer checks out with &quot;Pay with Zcash,&quot; a CipherPay invoice is <strong style={{ color: '#22c55e' }}>automatically created</strong>. The payment link is added to the order notes and included in the confirmation email.
+              <strong style={{ color: '#a1a1aa' }}>3.</strong> Add the CipherPay payment button to your Thank You page:
+            </p>
+            <div style={{ fontSize: 11, color: '#52525b', paddingLeft: 16, marginBottom: 12 }}>
+              <p style={{ marginTop: 4, marginBottom: 4 }}>
+                Go to <strong style={{ color: '#a1a1aa' }}>Settings → Checkout → Customize</strong>
+              </p>
+              <p style={{ marginTop: 4, marginBottom: 4 }}>
+                Switch to the <strong style={{ color: '#a1a1aa' }}>Thank you</strong> page (top dropdown)
+              </p>
+              <p style={{ marginTop: 4, marginBottom: 4 }}>
+                Click the <strong style={{ color: '#a1a1aa' }}>Apps</strong> icon on the left panel
+              </p>
+              <p style={{ marginTop: 4, marginBottom: 4 }}>
+                Click <strong style={{ color: '#a1a1aa' }}>+</strong> next to <strong style={{ color: '#00D4FF' }}>CipherPay Checkout</strong>
+              </p>
+              <p style={{ marginTop: 4, marginBottom: 4 }}>
+                Click <strong style={{ color: '#a1a1aa' }}>Save</strong>
+              </p>
+            </div>
+
+            <p>
+              <strong style={{ color: '#a1a1aa' }}>4.</strong> When a customer checks out with &quot;Pay with Zcash,&quot; a <strong style={{ color: '#22c55e' }}>&quot;Pay with Zcash&quot; button</strong> appears on the Thank You page. The customer clicks it to complete payment.
             </p>
 
             <p style={{ marginBottom: 0 }}>
-              <strong style={{ color: '#a1a1aa' }}>4.</strong> Place a test order to verify the payment flow.
+              <strong style={{ color: '#a1a1aa' }}>5.</strong> Place a test order to verify the payment flow.
             </p>
           </div>
         </div>
