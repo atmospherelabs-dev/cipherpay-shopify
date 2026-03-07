@@ -35,6 +35,7 @@ export default function () {
 
 function CipherPayThankYou() {
   const [paymentUrl, setPaymentUrl] = useState(null);
+  const [status, setStatus] = useState("pending");
   const [loading, setLoading] = useState(true);
   const [skip, setSkip] = useState(false);
   const [error, setError] = useState(null);
@@ -51,6 +52,8 @@ function CipherPayThankYou() {
 
     let cancelled = false;
     let attempts = 0;
+    const MAX_ATTEMPTS = 6;
+    const RETRY_MS = 2500;
 
     async function fetchPayment() {
       try {
@@ -65,23 +68,24 @@ function CipherPayThankYou() {
 
         if (data.payment_url) {
           setPaymentUrl(data.payment_url);
+          setStatus(data.status || "pending");
           setLoading(false);
         } else if (data.skip) {
           setSkip(true);
           setLoading(false);
-        } else if (attempts < 3) {
+        } else if (attempts < MAX_ATTEMPTS) {
           attempts++;
-          setTimeout(fetchPayment, 2000);
+          setTimeout(fetchPayment, RETRY_MS);
         } else {
-          setError("Payment link unavailable. Please check your email.");
+          setError("Payment link unavailable. Please check your order email.");
           setLoading(false);
         }
       } catch (err) {
-        if (!cancelled && attempts < 3) {
+        if (!cancelled && attempts < MAX_ATTEMPTS) {
           attempts++;
-          setTimeout(fetchPayment, 2000);
+          setTimeout(fetchPayment, RETRY_MS);
         } else if (!cancelled) {
-          setError("Could not load payment. Please check your email.");
+          setError("Could not load payment. Please check your order email.");
           setLoading(false);
         }
       }
@@ -117,6 +121,8 @@ function CipherPayThankYou() {
     );
   }
 
+  const isPaid = status === "confirmed" || status === "detected";
+
   return (
     <s-stack padding="base" border="base" borderRadius="base" gap="base">
       <s-stack direction="inline" gap="small" alignItems="center">
@@ -127,15 +133,25 @@ function CipherPayThankYou() {
             fit="contain"
           />
         </s-box>
-        <s-heading>Complete Your Payment</s-heading>
+        <s-heading>{isPaid ? "Payment Received" : "Complete Your Payment"}</s-heading>
       </s-stack>
-      <s-text>
-        Your order is awaiting payment. Pay securely with Zcash (ZEC) via
-        CipherPay.
-      </s-text>
-      <s-button variant="primary" href={paymentUrl} target="_blank">
-        Pay with CipherPay
-      </s-button>
+      {isPaid ? (
+        <s-text>
+          Your Zcash (ZEC) payment has been received. Thank you!
+        </s-text>
+      ) : (
+        <div>
+          <s-text>
+            Your order is awaiting payment. Pay securely with Zcash (ZEC) via
+            CipherPay.
+          </s-text>
+          <s-box padding="small none none none">
+            <s-button variant="primary" href={paymentUrl} target="_blank">
+              Pay with CipherPay
+            </s-button>
+          </s-box>
+        </div>
+      )}
     </s-stack>
   );
 }

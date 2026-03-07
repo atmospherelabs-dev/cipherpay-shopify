@@ -1,8 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getShop, getPaymentSessionByOrderId, createPaymentSession } from '@/lib/db';
-import { createInvoice } from '@/lib/cipherpay';
-import { shopifyAdminApi } from '@/lib/shopify';
-import crypto from 'crypto';
+import { getShop, getPaymentSessionByOrderId } from '@/lib/db';
 
 function corsHeaders() {
   return {
@@ -61,92 +58,12 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    let order;
-    try {
-      const orderRes = await shopifyAdminApi(
-        shop,
-        shopData.access_token,
-        `orders/${order_id}.json`
-      );
-      order = orderRes.order;
-      console.log('extension/payment: fetched order from Shopify', { order_id, gateway: order.gateway, payment_gateway_names: order.payment_gateway_names });
-    } catch (err) {
-      console.error(`extension/payment: failed to fetch order ${order_id}:`, err);
-      return NextResponse.json(
-        { error: 'Order not found' },
-        { status: 404, headers: corsHeaders() }
-      );
-    }
-
-    const gateway = (order.gateway || '').toLowerCase();
-    const paymentMethod = (order.payment_gateway_names || []).join(' ').toLowerCase();
-    const isZcash =
-      gateway.includes('zcash') || gateway.includes('zec') || gateway.includes('cipherpay') ||
-      paymentMethod.includes('zcash') || paymentMethod.includes('zec') || paymentMethod.includes('cipherpay');
-
-    console.log('extension/payment: zcash detection', { gateway, paymentMethod, isZcash });
-
-    if (!isZcash) {
-      return NextResponse.json(
-        { skip: true },
-        { status: 200, headers: corsHeaders() }
-      );
-    }
-
-    const productName = order.line_items?.length > 0
-      ? order.line_items.map((i: { title: string }) => i.title).join(', ').substring(0, 200)
-      : `Order #${order.order_number || order.id}`;
-
-    const amount = parseFloat(order.total_price);
-    const currency = order.currency || 'USD';
-
-    const invoice = await createInvoice(
-      shopData.cipherpay_api_url,
-      shopData.cipherpay_api_key,
-      {
-        product_name: productName,
-        amount,
-        currency,
-      }
-    );
-    if (!invoice.id) {
-      throw new Error('CipherPay invoice response missing id');
-    }
-
-    const sessionId = crypto.randomUUID();
-    await createPaymentSession({
-      id: sessionId,
-      shop,
-      shopify_order_id: order_id,
-      cipherpay_invoice_id: invoice.id,
-      amount: amount.toString(),
-      currency,
-    });
-
-    const checkoutDomain = shopData.cipherpay_api_url.includes('testnet')
-      ? 'https://testnet.cipherpay.app'
-      : 'https://cipherpay.app';
-    const payUrl = `${checkoutDomain}/pay/${invoice.id}?theme=dark`;
-
-    try {
-      await shopifyAdminApi(shop, shopData.access_token, `orders/${order.id}.json`, {
-        method: 'PUT',
-        body: {
-          order: {
-            id: order.id,
-            tags: `cipherpay,${invoice.id}`,
-          },
-        },
-      });
-    } catch (err) {
-      console.error('Extension: failed to tag order:', err);
-    }
-
-    console.log(`Extension: created invoice ${invoice.id} for order #${order.order_number} on ${shop}`);
-
+    // No session found yet — the webhook may still be processing.
+    // Don't create a new invoice here to avoid duplicates.
+    console.log('extension/payment: no session found, webhook may not have fired yet', { shop, order_id });
     return NextResponse.json(
-      { payment_url: payUrl, invoice_id: invoice.id, status: 'pending' },
-      { headers: corsHeaders() }
+      { pending: true },
+      { status: 200, headers: corsHeaders() }
     );
   } catch (err) {
     console.error('Extension payment error:', err);
