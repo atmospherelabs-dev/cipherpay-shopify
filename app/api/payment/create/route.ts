@@ -24,26 +24,14 @@ export async function POST(req: NextRequest) {
 
     const returnUrl = `https://${shop}/admin/orders/${order_id}`;
 
-    const invoiceParams: {
-      product_name: string;
-      return_url: string;
-      theme: string;
-      currency: string;
-      price_eur?: number;
-      price_usd?: number;
-    } = {
+    const parsedAmount = parseFloat(amount);
+    const invoiceParams = {
       product_name: productName.substring(0, 200),
       return_url: returnUrl,
       theme: 'dark',
       currency: currency || 'EUR',
+      amount: parsedAmount,
     };
-
-    const parsedAmount = parseFloat(amount);
-    if (currency === 'USD') {
-      invoiceParams.price_usd = parsedAmount;
-    } else {
-      invoiceParams.price_eur = parsedAmount;
-    }
 
     const invoice = await createInvoice(
       shopData.cipherpay_api_url,
