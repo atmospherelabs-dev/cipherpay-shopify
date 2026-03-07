@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { verifyWebhookHmac, shopifyAdminApi } from '@/lib/shopify';
-import { getShop, createPaymentSession } from '@/lib/db';
+import { getShop, createPaymentSession, getPaymentSessionByOrderId, acquireOrderLock } from '@/lib/db';
 import { createInvoice } from '@/lib/cipherpay';
 import crypto from 'crypto';
 
@@ -64,6 +64,20 @@ export async function POST(req: NextRequest) {
     if (!shopData || !shopData.cipherpay_api_key) {
       console.error(`orders/create: shop ${shopDomain} not configured`);
       return NextResponse.json({ error: 'Shop not configured' }, { status: 400 });
+    }
+
+    const existingSession = await getPaymentSessionByOrderId(shopDomain, order.id.toString());
+    if (existingSession?.cipherpay_invoice_id) {
+      console.log('orders/create webhook: session already exists, skipping invoice creation', {
+        shopDomain, orderId: order.id, invoiceId: existingSession.cipherpay_invoice_id,
+      });
+      return NextResponse.json({ ok: true, invoice_id: existingSession.cipherpay_invoice_id, skipped: 'already exists' });
+    }
+
+    const lockAcquired = await acquireOrderLock(shopDomain, order.id.toString());
+    if (!lockAcquired) {
+      console.log('orders/create webhook: lock held by extension, skipping', { shopDomain, orderId: order.id });
+      return NextResponse.json({ ok: true, skipped: 'lock held' });
     }
 
     const productName = order.line_items?.length > 0

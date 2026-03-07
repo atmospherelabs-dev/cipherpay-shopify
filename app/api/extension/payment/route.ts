@@ -1,5 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getShop, getPaymentSessionByOrderId } from '@/lib/db';
+import { getShop, getPaymentSessionByOrderId, createPaymentSession, acquireOrderLock } from '@/lib/db';
+import { createInvoice } from '@/lib/cipherpay';
+import { shopifyAdminApi } from '@/lib/shopify';
+import crypto from 'crypto';
 
 function corsHeaders() {
   return {
@@ -41,12 +44,13 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    const checkoutDomain = shopData.cipherpay_api_url.includes('testnet')
+      ? 'https://testnet.cipherpay.app'
+      : 'https://cipherpay.app';
+
     const existing = await getPaymentSessionByOrderId(shop, order_id);
     console.log('extension/payment: session lookup', { shop, order_id, found: Boolean(existing), invoiceId: existing?.cipherpay_invoice_id });
     if (existing?.cipherpay_invoice_id) {
-      const checkoutDomain = shopData.cipherpay_api_url.includes('testnet')
-        ? 'https://testnet.cipherpay.app'
-        : 'https://cipherpay.app';
       console.log('extension/payment: returning existing session', { invoiceId: existing.cipherpay_invoice_id });
       return NextResponse.json(
         {
@@ -58,12 +62,53 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // No session found yet — the webhook may still be processing.
-    // Don't create a new invoice here to avoid duplicates.
-    console.log('extension/payment: no session found, webhook may not have fired yet', { shop, order_id });
+    // No session yet — try to create the invoice (with atomic lock to prevent duplicates)
+    const lockAcquired = await acquireOrderLock(shop, order_id);
+    if (!lockAcquired) {
+      // Another process is creating the invoice — tell client to retry
+      console.log('extension/payment: lock held by another process, retrying', { shop, order_id });
+      return NextResponse.json({ pending: true }, { status: 200, headers: corsHeaders() });
+    }
+
+    console.log('extension/payment: lock acquired, creating invoice', { shop, order_id });
+
+    let orderData: { total_price: string; currency: string; line_items?: Array<{ title: string }> };
+    try {
+      const res = await shopifyAdminApi(shop, shopData.access_token, `orders/${order_id}.json`);
+      orderData = res.order;
+    } catch (err) {
+      console.error('extension/payment: failed to fetch order', { shop, order_id, err });
+      return NextResponse.json({ pending: true }, { status: 200, headers: corsHeaders() });
+    }
+
+    const amount = parseFloat(orderData.total_price);
+    const currency = orderData.currency || 'USD';
+    const productName = orderData.line_items?.length
+      ? orderData.line_items.map((i) => i.title).join(', ').substring(0, 200)
+      : `Order #${order_id}`;
+
+    const invoice = await createInvoice(shopData.cipherpay_api_url, shopData.cipherpay_api_key, {
+      product_name: productName,
+      amount,
+      currency,
+    });
+
+    const sessionId = crypto.randomUUID();
+    await createPaymentSession({
+      id: sessionId,
+      shop,
+      shopify_order_id: order_id,
+      cipherpay_invoice_id: invoice.id,
+      amount: amount.toString(),
+      currency,
+    });
+
+    const payUrl = `${checkoutDomain}/pay/${invoice.id}?theme=dark`;
+    console.log('extension/payment: invoice created', { shop, order_id, invoiceId: invoice.id });
+
     return NextResponse.json(
-      { pending: true },
-      { status: 200, headers: corsHeaders() }
+      { payment_url: payUrl, invoice_id: invoice.id, status: 'pending' },
+      { headers: corsHeaders() }
     );
   } catch (err) {
     console.error('Extension payment error:', err);
