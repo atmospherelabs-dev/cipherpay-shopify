@@ -1,0 +1,17 @@
+api_version = "2025-01"
+
+[[extensions]]
+name = "CipherPay Checkout"
+handle = "cipherpay-checkout"
+type = "ui_extension"
+
+[extensions.capabilities]
+network_access = true
+
+[[extensions.targeting]]
+module = "./src/ThankYouPage.jsx"
+target = "purchase.thank-you.block.render"
+
+[[extensions.targeting]]
+module = "./src/OrderStatusPage.jsx"
+target = "customer-account.order-status.block.render"

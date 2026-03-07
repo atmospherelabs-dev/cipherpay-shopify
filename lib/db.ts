@@ -26,6 +26,7 @@ export interface PaymentSession {
 function shopKey(shop: string) { return `shop:${shop}`; }
 function sessionKey(id: string) { return `session:${id}`; }
 function invoiceMapKey(invoiceId: string) { return `invoice:${invoiceId}`; }
+function orderMapKey(shop: string, orderId: string) { return `order:${shop}:${orderId}`; }
 
 export async function saveShop(shop: string, accessToken: string): Promise<void> {
   const existing = await getShop(shop);
@@ -82,6 +83,9 @@ export async function createPaymentSession(session: {
   if (session.cipherpay_invoice_id) {
     await redis.set(invoiceMapKey(session.cipherpay_invoice_id), session.id, { ex: 86400 });
   }
+  if (session.shopify_order_id) {
+    await redis.set(orderMapKey(session.shop, session.shopify_order_id), session.id, { ex: 86400 });
+  }
 }
 
 export async function getPaymentSession(id: string): Promise<PaymentSession | null> {
@@ -92,6 +96,12 @@ export async function getPaymentSession(id: string): Promise<PaymentSession | nu
 
 export async function getPaymentSessionByInvoiceId(invoiceId: string): Promise<PaymentSession | null> {
   const sessionId = await redis.get<string>(invoiceMapKey(invoiceId));
+  if (!sessionId) return null;
+  return getPaymentSession(typeof sessionId === 'string' ? sessionId : String(sessionId));
+}
+
+export async function getPaymentSessionByOrderId(shop: string, orderId: string): Promise<PaymentSession | null> {
+  const sessionId = await redis.get<string>(orderMapKey(shop, orderId));
   if (!sessionId) return null;
   return getPaymentSession(typeof sessionId === 'string' ? sessionId : String(sessionId));
 }

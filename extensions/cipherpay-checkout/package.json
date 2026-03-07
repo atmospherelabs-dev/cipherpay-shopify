@@ -1,0 +1,8 @@
+{
+  "name": "cipherpay-checkout",
+  "private": true,
+  "version": "1.0.0",
+  "dependencies": {
+    "preact": "^10.25.0"
+  }
+}

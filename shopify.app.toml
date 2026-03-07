@@ -1,0 +1,13 @@
+name = "CipherPay"
+client_id = "296fbfdb946de04bd188148d3984d625"
+application_url = "https://shopify.cipherpay.app"
+embedded = false
+
+[access_scopes]
+scopes = "read_orders,write_orders"
+
+[auth]
+redirect_urls = ["https://shopify.cipherpay.app/api/auth/callback"]
+
+[webhooks]
+api_version = "2024-10"
