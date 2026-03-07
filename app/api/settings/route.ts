@@ -1,6 +1,23 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getShop, updateShopConfig } from '@/lib/db';
 
+function sanitizeSecret(value: unknown): string | undefined {
+  if (typeof value !== 'string') return undefined;
+
+  const sanitized = value
+    .trim()
+    .replace(/[\s\u2028\u2029]+/g, '');
+
+  return sanitized || undefined;
+}
+
+function sanitizeUrl(value: unknown): string | undefined {
+  if (typeof value !== 'string') return undefined;
+
+  const sanitized = value.trim().replace(/\/+$/, '');
+  return sanitized || undefined;
+}
+
 export async function GET(req: NextRequest) {
   const shop = req.nextUrl.searchParams.get('shop');
   if (!shop) {
@@ -38,9 +55,9 @@ export async function POST(req: NextRequest) {
   }
 
   await updateShopConfig(shop, {
-    cipherpay_api_key: cipherpay_api_key || undefined,
-    cipherpay_api_url: cipherpay_api_url || undefined,
-    cipherpay_webhook_secret: cipherpay_webhook_secret || undefined,
+    cipherpay_api_key: sanitizeSecret(cipherpay_api_key),
+    cipherpay_api_url: sanitizeUrl(cipherpay_api_url),
+    cipherpay_webhook_secret: sanitizeSecret(cipherpay_webhook_secret),
   });
 
   return NextResponse.json({ ok: true });
