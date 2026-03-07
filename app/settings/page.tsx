@@ -295,7 +295,7 @@ export default function SettingsPage() {
             </p>
 
             <p>
-              <strong style={{ color: '#a1a1aa' }}>3.</strong> The checkout script is <strong style={{ color: '#22c55e' }}>automatically installed</strong> when you install the app. No manual setup needed.
+              <strong style={{ color: '#a1a1aa' }}>3.</strong> When a customer checks out with &quot;Pay with Zcash,&quot; a CipherPay invoice is <strong style={{ color: '#22c55e' }}>automatically created</strong>. The payment link is added to the order notes and included in the confirmation email.
             </p>
 
             <p style={{ marginBottom: 0 }}>

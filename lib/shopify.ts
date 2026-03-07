@@ -2,7 +2,7 @@ import crypto from 'crypto';
 
 const SHOPIFY_API_KEY = process.env.SHOPIFY_API_KEY!;
 const SHOPIFY_API_SECRET = process.env.SHOPIFY_API_SECRET!;
-const SHOPIFY_SCOPES = process.env.SHOPIFY_SCOPES || 'read_orders,write_orders,write_script_tags';
+const SHOPIFY_SCOPES = process.env.SHOPIFY_SCOPES || 'read_orders,write_orders';
 const HOST = process.env.HOST!;
 
 export function buildInstallUrl(shop: string): string {
@@ -92,28 +92,29 @@ export async function markOrderAsPaid(
   return txRes;
 }
 
-export async function registerScriptTag(
+export async function registerWebhooks(
   shop: string,
   accessToken: string,
 ): Promise<void> {
   const host = process.env.HOST || 'https://shopify.cipherpay.app';
-  const scriptUrl = `${host}/checkout.js`;
+  const topics = [
+    { topic: 'orders/create', address: `${host}/api/webhook/shopify/orders` },
+    { topic: 'app/uninstalled', address: `${host}/api/webhook/shopify` },
+  ];
 
-  const existing = await shopifyAdminApi(shop, accessToken, 'script_tags.json');
-  const alreadyInstalled = existing.script_tags?.some(
-    (tag: { src: string }) => tag.src === scriptUrl
-  );
+  const existing = await shopifyAdminApi(shop, accessToken, 'webhooks.json');
+  const registeredTopics = (existing.webhooks || []).map((w: { topic: string }) => w.topic);
 
-  if (!alreadyInstalled) {
-    await shopifyAdminApi(shop, accessToken, 'script_tags.json', {
-      method: 'POST',
-      body: {
-        script_tag: {
-          event: 'onload',
-          src: scriptUrl,
+  for (const { topic, address } of topics) {
+    if (!registeredTopics.includes(topic)) {
+      await shopifyAdminApi(shop, accessToken, 'webhooks.json', {
+        method: 'POST',
+        body: {
+          webhook: { topic, address, format: 'json' },
         },
-      },
-    });
+      });
+      console.log(`Registered webhook: ${topic} → ${address}`);
+    }
   }
 }
 
