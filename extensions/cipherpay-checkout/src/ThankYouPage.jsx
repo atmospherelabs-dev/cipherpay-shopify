@@ -1,9 +1,10 @@
 /** @jsxImportSource preact */
 import "@shopify/ui-extensions/preact";
 import { render } from "preact";
-import { useState, useCallback } from "preact/hooks";
+import { useState, useEffect } from "preact/hooks";
 
 const API_BASE = "https://shopify.cipherpay.app";
+const LOGO_URL = "https://cipherpay.app/logo-mark.png";
 
 function normalizeId(id) {
   if (!id) return null;
@@ -33,76 +34,108 @@ export default function () {
 }
 
 function CipherPayThankYou() {
-  const [state, setState] = useState("idle");
   const [paymentUrl, setPaymentUrl] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [skip, setSkip] = useState(false);
   const [error, setError] = useState(null);
 
-  const handleClick = useCallback(async () => {
+  useEffect(() => {
     const orderId = getOrderId();
     const shop = getShop();
 
     if (!orderId || !shop) {
-      setError("Could not detect order. Please contact the store.");
+      setLoading(false);
+      setError("Could not detect order details.");
       return;
     }
 
-    setState("loading");
-    setError(null);
+    let cancelled = false;
+    let attempts = 0;
 
-    try {
-      const res = await fetch(`${API_BASE}/api/extension/payment`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ shop, order_id: orderId }),
-      });
-      const data = await res.json();
+    async function fetchPayment() {
+      try {
+        const res = await fetch(`${API_BASE}/api/extension/payment`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ shop, order_id: orderId }),
+        });
+        const data = await res.json();
 
-      if (data.payment_url) {
-        setPaymentUrl(data.payment_url);
-        setState("ready");
-      } else if (data.skip) {
-        setState("skip");
-      } else {
-        setError("Payment not ready yet. Try again in a few seconds.");
-        setState("idle");
+        if (cancelled) return;
+
+        if (data.payment_url) {
+          setPaymentUrl(data.payment_url);
+          setLoading(false);
+        } else if (data.skip) {
+          setSkip(true);
+          setLoading(false);
+        } else if (attempts < 3) {
+          attempts++;
+          setTimeout(fetchPayment, 2000);
+        } else {
+          setError("Payment link unavailable. Please check your email.");
+          setLoading(false);
+        }
+      } catch (err) {
+        if (!cancelled && attempts < 3) {
+          attempts++;
+          setTimeout(fetchPayment, 2000);
+        } else if (!cancelled) {
+          setError("Could not load payment. Please check your email.");
+          setLoading(false);
+        }
       }
-    } catch (err) {
-      setError("Error loading payment. Please try again.");
-      setState("idle");
     }
+
+    fetchPayment();
+    return () => { cancelled = true; };
   }, []);
 
-  if (state === "skip") return null;
+  if (skip) return null;
 
-  if (state === "ready" && paymentUrl) {
+  if (loading) {
     return (
-      <s-box border="base" padding="base" borderRadius="base">
-        <s-stack gap="base">
-          <s-heading>Pay with Zcash (ZEC)</s-heading>
-          <s-text>Your payment link is ready.</s-text>
-          <s-button variant="primary" href={paymentUrl} target="_blank">
-            Open Zcash Payment Page
-          </s-button>
-        </s-stack>
-      </s-box>
+      <s-stack
+        direction="inline"
+        gap="small"
+        alignItems="center"
+        padding="base"
+        border="base"
+        borderRadius="base"
+      >
+        <s-spinner />
+        <s-text appearance="subdued">Loading payment...</s-text>
+      </s-stack>
+    );
+  }
+
+  if (error) {
+    return (
+      <s-stack padding="base" border="base" borderRadius="base" gap="small">
+        <s-text appearance="warning">{error}</s-text>
+      </s-stack>
     );
   }
 
   return (
-    <s-box border="base" padding="base" borderRadius="base">
-      <s-stack gap="base">
-        <s-heading>Pay with Zcash (ZEC)</s-heading>
-        <s-text>Click below to complete your payment with Zcash.</s-text>
-        <s-button
-          variant="primary"
-          loading={state === "loading" || undefined}
-          disabled={state === "loading" || undefined}
-          onClick={handleClick}
-        >
-          Pay with Zcash (ZEC)
-        </s-button>
-        {error && <s-text appearance="warning">{error}</s-text>}
+    <s-stack padding="base" border="base" borderRadius="base" gap="base">
+      <s-stack direction="inline" gap="small" alignItems="center">
+        <s-box inlineSize="24px" blockSize="24px" minInlineSize="24px">
+          <s-image
+            src={LOGO_URL}
+            accessibilityLabel="CipherPay"
+            fit="contain"
+          />
+        </s-box>
+        <s-heading>Complete Your Payment</s-heading>
       </s-stack>
-    </s-box>
+      <s-text>
+        Your order is awaiting payment. Pay securely with Zcash (ZEC) via
+        CipherPay.
+      </s-text>
+      <s-button variant="primary" href={paymentUrl} target="_blank">
+        Pay with CipherPay
+      </s-button>
+    </s-stack>
   );
 }
