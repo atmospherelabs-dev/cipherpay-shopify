@@ -3,6 +3,8 @@ import { render } from "preact";
 import { useState, useEffect } from "preact/hooks";
 
 const API_BASE = "https://shopify.cipherpay.app";
+const MAX_RETRIES = 5;
+const RETRY_DELAY_MS = 3000;
 
 function normalizeOrderId(orderId) {
   if (!orderId) return null;
@@ -31,11 +33,14 @@ function resolveOrderId() {
 
 function debugShopifyGlobal() {
   try {
-    const keys = Object.keys(shopify || {});
-    return keys.join(", ") || "(empty)";
+    return Object.keys(shopify || {}).join(", ") || "(empty)";
   } catch (_) {
-    return "(error reading shopify)";
+    return "(error)";
   }
+}
+
+function sleep(ms) {
+  return new Promise((r) => setTimeout(r, ms));
 }
 
 export default function () {
@@ -52,17 +57,16 @@ function CipherPayCheckout() {
 
   useEffect(() => {
     if (!shopDomain) {
-      setDebug(`No shopDomain. shopify keys: ${debugShopifyGlobal()}`);
+      setDebug(`No shopDomain. keys: ${debugShopifyGlobal()}`);
       setLoading(false);
       return;
     }
 
     if (!orderId) {
-      setDebug(`Waiting for orderId. shopify keys: ${debugShopifyGlobal()}`);
+      setDebug(`Waiting for orderId. keys: ${debugShopifyGlobal()}`);
       const timeout = setTimeout(() => {
-        const retryId = resolveOrderId();
-        if (!retryId) {
-          setDebug(`orderId not found after 10s. shopify keys: ${debugShopifyGlobal()}`);
+        if (!resolveOrderId()) {
+          setDebug(`No orderId after 10s. keys: ${debugShopifyGlobal()}`);
           setLoading(false);
         }
       }, 10000);
@@ -73,42 +77,56 @@ function CipherPayCheckout() {
     setLoading(true);
     setDebug(null);
 
-    async function fetchPayment() {
-      try {
-        const res = await fetch(`${API_BASE}/api/extension/payment`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            shop: shopDomain,
-            order_id: orderId,
-          }),
-        });
+    async function fetchWithRetry() {
+      for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+        if (cancelled) return;
 
-        if (!res.ok) {
-          const text = await res.text();
-          if (!cancelled) setDebug(`API ${res.status}: ${text}`);
-          return;
-        }
+        try {
+          const res = await fetch(`${API_BASE}/api/extension/payment`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              shop: shopDomain,
+              order_id: orderId,
+            }),
+          });
 
-        const data = await res.json();
-        if (!cancelled && data.payment_url) {
-          setPaymentUrl(data.payment_url);
-        } else if (!cancelled && data.skip) {
-          setDebug(null);
-        } else if (!cancelled) {
-          setDebug(`API returned no payment_url: ${JSON.stringify(data)}`);
-        }
-      } catch (err) {
-        if (!cancelled) {
+          if (res.ok) {
+            const data = await res.json();
+            if (data.payment_url) {
+              if (!cancelled) setPaymentUrl(data.payment_url);
+              return;
+            }
+            if (data.skip) {
+              // Not a Zcash order
+              return;
+            }
+          }
+
+          // No payment URL yet -- invoice may not be created yet
+          if (attempt < MAX_RETRIES) {
+            if (!cancelled) {
+              setDebug(`Waiting for invoice... (attempt ${attempt}/${MAX_RETRIES})`);
+            }
+            await sleep(RETRY_DELAY_MS);
+          }
+        } catch (err) {
           console.error("CipherPay extension error:", err);
-          setDebug(`Fetch error: ${err.message}`);
+          if (attempt < MAX_RETRIES) {
+            await sleep(RETRY_DELAY_MS);
+          }
         }
-      } finally {
-        if (!cancelled) setLoading(false);
+      }
+
+      if (!cancelled) {
+        setDebug(`Could not load payment after ${MAX_RETRIES} attempts`);
       }
     }
 
-    fetchPayment();
+    fetchWithRetry().finally(() => {
+      if (!cancelled) setLoading(false);
+    });
+
     return () => { cancelled = true; };
   }, [orderId, shopDomain]);
 
@@ -117,16 +135,16 @@ function CipherPayCheckout() {
       <s-box padding="base" borderRadius="base">
         <s-stack blockAlignment="center" inlineAlignment="center" gap="base">
           <s-spinner />
-          <s-text>Loading payment details...</s-text>
+          <s-text>{debug || "Loading payment details..."}</s-text>
         </s-stack>
       </s-box>
     );
   }
 
-  if (debug) {
+  if (debug && !paymentUrl) {
     return (
       <s-box padding="base" borderRadius="base" border="base">
-        <s-text size="small" appearance="subdued">CipherPay debug: {debug}</s-text>
+        <s-text size="small" appearance="subdued">CipherPay: {debug}</s-text>
       </s-box>
     );
   }

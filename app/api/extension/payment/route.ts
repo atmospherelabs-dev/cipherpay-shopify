@@ -19,8 +19,10 @@ export async function OPTIONS() {
 export async function POST(req: NextRequest) {
   try {
     const { shop, order_id } = await req.json();
+    console.log('extension/payment: request received', { shop, order_id });
 
     if (!shop || !order_id) {
+      console.log('extension/payment: missing params', { shop, order_id });
       return NextResponse.json(
         { error: 'Missing shop or order_id' },
         { status: 400, headers: corsHeaders() }
@@ -29,6 +31,7 @@ export async function POST(req: NextRequest) {
 
     const shopData = await getShop(shop);
     if (!shopData || !shopData.cipherpay_api_key) {
+      console.log('extension/payment: shop not configured', { shop });
       return NextResponse.json(
         { error: 'Shop not configured' },
         { status: 404, headers: corsHeaders() }
@@ -36,10 +39,12 @@ export async function POST(req: NextRequest) {
     }
 
     const existing = await getPaymentSessionByOrderId(shop, order_id);
+    console.log('extension/payment: session lookup', { shop, order_id, found: Boolean(existing), invoiceId: existing?.cipherpay_invoice_id });
     if (existing?.cipherpay_invoice_id) {
       const checkoutDomain = shopData.cipherpay_api_url.includes('testnet')
         ? 'https://testnet.cipherpay.app'
         : 'https://cipherpay.app';
+      console.log('extension/payment: returning existing session', { invoiceId: existing.cipherpay_invoice_id });
       return NextResponse.json(
         {
           payment_url: `${checkoutDomain}/pay/${existing.cipherpay_invoice_id}?theme=dark`,
@@ -58,8 +63,9 @@ export async function POST(req: NextRequest) {
         `orders/${order_id}.json`
       );
       order = orderRes.order;
+      console.log('extension/payment: fetched order from Shopify', { order_id, gateway: order.gateway, payment_gateway_names: order.payment_gateway_names });
     } catch (err) {
-      console.error(`Extension: failed to fetch order ${order_id}:`, err);
+      console.error(`extension/payment: failed to fetch order ${order_id}:`, err);
       return NextResponse.json(
         { error: 'Order not found' },
         { status: 404, headers: corsHeaders() }
@@ -71,6 +77,8 @@ export async function POST(req: NextRequest) {
     const isZcash =
       gateway.includes('zcash') || gateway.includes('zec') || gateway.includes('cipherpay') ||
       paymentMethod.includes('zcash') || paymentMethod.includes('zec') || paymentMethod.includes('cipherpay');
+
+    console.log('extension/payment: zcash detection', { gateway, paymentMethod, isZcash });
 
     if (!isZcash) {
       return NextResponse.json(
