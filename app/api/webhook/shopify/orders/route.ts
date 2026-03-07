@@ -75,8 +75,6 @@ export async function POST(req: NextRequest) {
 
     const invoiceParams = {
       product_name: productName,
-      return_url: `https://${shopDomain}/account/orders`,
-      theme: 'dark',
       currency,
       amount,
     };
@@ -87,7 +85,6 @@ export async function POST(req: NextRequest) {
       currency,
       productNameLength: productName.length,
       productNameNonLatin1: firstNonLatin1Char(productName),
-      returnUrlNonLatin1: firstNonLatin1Char(invoiceParams.return_url),
     });
 
     const invoice = await createInvoice(
@@ -139,7 +136,7 @@ export async function POST(req: NextRequest) {
           order: {
             id: order.id,
             note: orderNote,
-            tags: `cipherpay,invoice:${invoice.id}`,
+            tags: `cipherpay,${invoice.id}`,
           },
         },
       });

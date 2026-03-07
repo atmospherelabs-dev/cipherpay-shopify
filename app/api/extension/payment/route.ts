@@ -93,8 +93,6 @@ export async function POST(req: NextRequest) {
         product_name: productName,
         amount,
         currency,
-        return_url: `https://${shop}/account/orders`,
-        theme: 'dark',
       }
     );
     if (!invoice.id) {
@@ -122,7 +120,7 @@ export async function POST(req: NextRequest) {
         body: {
           order: {
             id: order.id,
-            tags: `cipherpay,invoice:${invoice.id}`,
+            tags: `cipherpay,${invoice.id}`,
           },
         },
       });

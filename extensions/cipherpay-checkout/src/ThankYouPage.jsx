@@ -16,18 +16,26 @@ export default function () {
 function CipherPayCheckout() {
   const [paymentUrl, setPaymentUrl] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
 
-  const orderId = normalizeOrderId(shopify.orderConfirmation.current?.order?.id);
+  // .value triggers Preact signal subscription so the component
+  // re-renders when order confirmation data becomes available
+  const orderId = normalizeOrderId(shopify.orderConfirmation.value?.order?.id);
   const shopDomain = shopify.shop.myshopifyDomain;
 
   useEffect(() => {
-    if (!orderId || !shopDomain) {
+    if (!shopDomain) {
       setLoading(false);
       return;
     }
 
+    if (!orderId) {
+      // Signal hasn't resolved yet -- keep spinner, auto-hide after 10s
+      const timeout = setTimeout(() => setLoading(false), 10000);
+      return () => clearTimeout(timeout);
+    }
+
     let cancelled = false;
+    setLoading(true);
 
     async function fetchPayment() {
       try {
@@ -41,11 +49,8 @@ function CipherPayCheckout() {
         });
 
         if (!res.ok) {
-          if (res.status === 404) {
-            setLoading(false);
-            return;
-          }
-          throw new Error(`Request failed: ${res.status}`);
+          setLoading(false);
+          return;
         }
 
         const data = await res.json();
@@ -55,7 +60,6 @@ function CipherPayCheckout() {
       } catch (err) {
         if (!cancelled) {
           console.error("CipherPay extension error:", err);
-          setError("Unable to load payment details");
         }
       } finally {
         if (!cancelled) setLoading(false);
@@ -78,7 +82,6 @@ function CipherPayCheckout() {
   }
 
   if (!paymentUrl) return null;
-  if (error) return null;
 
   return (
     <s-box border="base" padding="base" borderRadius="base">
