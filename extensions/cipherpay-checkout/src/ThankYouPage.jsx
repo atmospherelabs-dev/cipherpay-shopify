@@ -9,6 +9,35 @@ function normalizeOrderId(orderId) {
   return String(orderId).replace("gid://shopify/Order/", "");
 }
 
+function resolveOrderId() {
+  try {
+    const oc = shopify.orderConfirmation;
+    if (oc) {
+      const id = oc.value?.order?.id ?? oc.current?.order?.id;
+      if (id) return normalizeOrderId(id);
+    }
+  } catch (_) {}
+
+  try {
+    const o = shopify.order;
+    if (o) {
+      const id = o.value?.id ?? o.current?.id ?? o.id;
+      if (id) return normalizeOrderId(id);
+    }
+  } catch (_) {}
+
+  return null;
+}
+
+function debugShopifyGlobal() {
+  try {
+    const keys = Object.keys(shopify || {});
+    return keys.join(", ") || "(empty)";
+  } catch (_) {
+    return "(error reading shopify)";
+  }
+}
+
 export default function () {
   render(<CipherPayCheckout />, document.body);
 }
@@ -16,26 +45,33 @@ export default function () {
 function CipherPayCheckout() {
   const [paymentUrl, setPaymentUrl] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [debug, setDebug] = useState(null);
 
-  // .value triggers Preact signal subscription so the component
-  // re-renders when order confirmation data becomes available
-  const orderId = normalizeOrderId(shopify.orderConfirmation.value?.order?.id);
-  const shopDomain = shopify.shop.myshopifyDomain;
+  const orderId = resolveOrderId();
+  const shopDomain = shopify?.shop?.myshopifyDomain;
 
   useEffect(() => {
     if (!shopDomain) {
+      setDebug(`No shopDomain. shopify keys: ${debugShopifyGlobal()}`);
       setLoading(false);
       return;
     }
 
     if (!orderId) {
-      // Signal hasn't resolved yet -- keep spinner, auto-hide after 10s
-      const timeout = setTimeout(() => setLoading(false), 10000);
+      setDebug(`Waiting for orderId. shopify keys: ${debugShopifyGlobal()}`);
+      const timeout = setTimeout(() => {
+        const retryId = resolveOrderId();
+        if (!retryId) {
+          setDebug(`orderId not found after 10s. shopify keys: ${debugShopifyGlobal()}`);
+          setLoading(false);
+        }
+      }, 10000);
       return () => clearTimeout(timeout);
     }
 
     let cancelled = false;
     setLoading(true);
+    setDebug(null);
 
     async function fetchPayment() {
       try {
@@ -49,17 +85,23 @@ function CipherPayCheckout() {
         });
 
         if (!res.ok) {
-          setLoading(false);
+          const text = await res.text();
+          if (!cancelled) setDebug(`API ${res.status}: ${text}`);
           return;
         }
 
         const data = await res.json();
         if (!cancelled && data.payment_url) {
           setPaymentUrl(data.payment_url);
+        } else if (!cancelled && data.skip) {
+          setDebug(null);
+        } else if (!cancelled) {
+          setDebug(`API returned no payment_url: ${JSON.stringify(data)}`);
         }
       } catch (err) {
         if (!cancelled) {
           console.error("CipherPay extension error:", err);
+          setDebug(`Fetch error: ${err.message}`);
         }
       } finally {
         if (!cancelled) setLoading(false);
@@ -77,6 +119,14 @@ function CipherPayCheckout() {
           <s-spinner />
           <s-text>Loading payment details...</s-text>
         </s-stack>
+      </s-box>
+    );
+  }
+
+  if (debug) {
+    return (
+      <s-box padding="base" borderRadius="base" border="base">
+        <s-text size="small" appearance="subdued">CipherPay debug: {debug}</s-text>
       </s-box>
     );
   }
