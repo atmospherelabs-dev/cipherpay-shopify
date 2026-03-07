@@ -118,14 +118,20 @@ export async function registerWebhooks(
   }
 }
 
-export function verifyWebhookHmac(body: string, hmacHeader: string): boolean {
-  const computed = crypto
-    .createHmac('sha256', SHOPIFY_API_SECRET)
-    .update(body)
-    .digest('base64');
+export function verifyWebhookHmac(body: Buffer, hmacHeader: string): boolean {
+  try {
+    const computed = crypto
+      .createHmac('sha256', SHOPIFY_API_SECRET)
+      .update(body)
+      .digest();
+    const provided = Buffer.from(hmacHeader, 'base64');
 
-  return crypto.timingSafeEqual(
-    Buffer.from(computed),
-    Buffer.from(hmacHeader)
-  );
+    if (computed.length !== provided.length) {
+      return false;
+    }
+
+    return crypto.timingSafeEqual(computed, provided);
+  } catch {
+    return false;
+  }
 }
