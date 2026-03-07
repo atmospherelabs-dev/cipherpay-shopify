@@ -1,5 +1,11 @@
 import crypto from 'crypto';
 
+function sanitizeCipherPaySecret(value: string): string {
+  return value
+    .trim()
+    .replace(/[\s\u2028\u2029]+/g, '');
+}
+
 export interface CipherPayInvoice {
   id: string;
   memo: string;
@@ -24,11 +30,13 @@ export async function createInvoice(
     theme?: string;
   }
 ): Promise<CipherPayInvoice> {
-  const res = await fetch(`${apiUrl}/api/invoices`, {
+  const normalizedApiUrl = apiUrl.trim().replace(/\/+$/, '');
+  const normalizedApiKey = sanitizeCipherPaySecret(apiKey);
+  const res = await fetch(`${normalizedApiUrl}/api/invoices`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'Authorization': `Bearer ${apiKey}`,
+      'Authorization': `Bearer ${normalizedApiKey}`,
     },
     body: JSON.stringify(params),
   });
@@ -47,9 +55,10 @@ export function verifyCipherPayWebhook(
   timestamp: string,
   webhookSecret: string
 ): boolean {
+  const normalizedWebhookSecret = sanitizeCipherPaySecret(webhookSecret);
   const payload = `${timestamp}.${body}`;
   const computed = crypto
-    .createHmac('sha256', webhookSecret)
+    .createHmac('sha256', normalizedWebhookSecret)
     .update(payload)
     .digest('hex');
 
