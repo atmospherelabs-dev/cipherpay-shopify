@@ -13,7 +13,7 @@ export async function POST(req: NextRequest) {
   }
 
   if (topic === 'app/uninstalled') {
-    deleteShop(shopDomain);
+    await deleteShop(shopDomain);
     console.log(`App uninstalled from ${shopDomain}, shop data deleted`);
   }
 

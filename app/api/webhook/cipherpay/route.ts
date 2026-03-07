@@ -17,13 +17,13 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Missing invoice_id' }, { status: 400 });
     }
 
-    const session = getPaymentSessionByInvoiceId(invoiceId);
+    const session = await getPaymentSessionByInvoiceId(invoiceId);
     if (!session) {
       console.warn(`No payment session found for invoice ${invoiceId}`);
       return NextResponse.json({ ok: true });
     }
 
-    const shopData = getShop(session.shop);
+    const shopData = await getShop(session.shop);
     if (!shopData) {
       return NextResponse.json({ error: 'Shop not found' }, { status: 404 });
     }
@@ -37,20 +37,20 @@ export async function POST(req: NextRequest) {
     }
 
     if (event === 'confirmed') {
-      updatePaymentSession(session.id, { status: 'confirmed' });
+      await updatePaymentSession(session.id, { status: 'confirmed' });
 
       if (session.shopify_order_id && shopData.access_token) {
         try {
           await markOrderAsPaid(session.shop, shopData.access_token, session.shopify_order_id);
           console.log(`Order ${session.shopify_order_id} marked as paid on ${session.shop}`);
         } catch (err) {
-          console.error(`Failed to mark order as paid on Shopify:`, err);
+          console.error('Failed to mark order as paid on Shopify:', err);
         }
       }
     } else if (event === 'detected') {
-      updatePaymentSession(session.id, { status: 'detected' });
+      await updatePaymentSession(session.id, { status: 'detected' });
     } else if (event === 'expired' || event === 'cancelled') {
-      updatePaymentSession(session.id, { status: event });
+      await updatePaymentSession(session.id, { status: event });
     }
 
     return NextResponse.json({ ok: true });
