@@ -70,15 +70,25 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ pending: true }, { status: 200, headers: corsHeaders() });
     }
 
-    console.log('extension/payment: lock acquired, creating invoice', { shop, order_id });
+    console.log('extension/payment: lock acquired, fetching order', { shop, order_id });
 
-    let orderData: { total_price: string; currency: string; line_items?: Array<{ title: string }> };
+    let orderData: { total_price: string; currency: string; gateway?: string; payment_gateway_names?: string[]; line_items?: Array<{ title: string }> };
     try {
       const res = await shopifyAdminApi(shop, shopData.access_token, `orders/${order_id}.json`);
       orderData = res.order;
     } catch (err) {
       console.error('extension/payment: failed to fetch order', { shop, order_id, err });
       return NextResponse.json({ pending: true }, { status: 200, headers: corsHeaders() });
+    }
+
+    const gateway = (orderData.gateway || '').toLowerCase();
+    const paymentMethod = (orderData.payment_gateway_names || []).join(' ').toLowerCase();
+    const isZcash = gateway.includes('zcash') || gateway.includes('zec') || gateway.includes('cipherpay') ||
+      paymentMethod.includes('zcash') || paymentMethod.includes('zec') || paymentMethod.includes('cipherpay');
+
+    if (!isZcash) {
+      console.log('extension/payment: not a Zcash payment, skipping', { shop, order_id, gateway, paymentMethod });
+      return NextResponse.json({ skip: true }, { status: 200, headers: corsHeaders() });
     }
 
     const amount = parseFloat(orderData.total_price);
