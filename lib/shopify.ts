@@ -5,15 +5,17 @@ const SHOPIFY_API_SECRET = process.env.SHOPIFY_API_SECRET!;
 const SHOPIFY_SCOPES = process.env.SHOPIFY_SCOPES || 'read_orders,write_orders';
 const HOST = process.env.HOST!;
 
-export function buildInstallUrl(shop: string): string {
-  const nonce = crypto.randomBytes(16).toString('hex');
+export function buildInstallUrl(shop: string): { url: string; state: string } {
+  const state = crypto.randomBytes(16).toString('hex');
   const redirectUri = `${HOST}/api/auth/callback`;
 
-  return `https://${shop}/admin/oauth/authorize?` +
+  const url = `https://${shop}/admin/oauth/authorize?` +
     `client_id=${SHOPIFY_API_KEY}` +
     `&scope=${SHOPIFY_SCOPES}` +
     `&redirect_uri=${encodeURIComponent(redirectUri)}` +
-    `&state=${nonce}`;
+    `&state=${state}`;
+
+  return { url, state };
 }
 
 export function verifyHmac(query: Record<string, string>): boolean {

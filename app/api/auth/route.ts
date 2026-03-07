@@ -17,6 +17,16 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: 'Invalid shop parameter' }, { status: 400 });
   }
 
-  const installUrl = buildInstallUrl(shop);
-  return NextResponse.redirect(installUrl);
+  const { url, state } = buildInstallUrl(shop);
+
+  const response = NextResponse.redirect(url);
+  response.cookies.set('shopify_oauth_state', state, {
+    httpOnly: true,
+    secure: true,
+    sameSite: 'lax',
+    maxAge: 600,
+    path: '/api/auth',
+  });
+
+  return response;
 }

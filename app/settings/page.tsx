@@ -50,7 +50,8 @@ export default function SettingsPage() {
     setShop(shopParam);
 
     if (shopParam) {
-      fetch(`/api/settings?shop=${encodeURIComponent(shopParam)}`)
+      const allParams = new URLSearchParams(window.location.search).toString();
+      fetch(`/api/settings?${allParams}`)
         .then(r => r.json())
         .then((data: ShopConfig) => {
           if (data.cipherpay_api_key) setApiKey(data.cipherpay_api_key);
@@ -72,7 +73,8 @@ export default function SettingsPage() {
     setSaved(false);
     setError('');
 
-    const res = await fetch('/api/settings', {
+    const allParams = new URLSearchParams(window.location.search).toString();
+    const res = await fetch(`/api/settings?${allParams}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
