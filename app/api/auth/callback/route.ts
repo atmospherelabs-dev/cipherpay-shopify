@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { verifyHmac, exchangeCodeForToken } from '@/lib/shopify';
+import { verifyHmac, exchangeCodeForToken, registerScriptTag } from '@/lib/shopify';
 import { saveShop } from '@/lib/db';
 
 export async function GET(req: NextRequest) {
@@ -17,6 +17,12 @@ export async function GET(req: NextRequest) {
   try {
     const accessToken = await exchangeCodeForToken(shop, code);
     await saveShop(shop, accessToken);
+
+    try {
+      await registerScriptTag(shop, accessToken);
+    } catch (err) {
+      console.error('ScriptTag registration failed (non-blocking):', err);
+    }
 
     const host = process.env.HOST || req.nextUrl.origin;
     return NextResponse.redirect(`${host}/settings?shop=${encodeURIComponent(shop)}`);
