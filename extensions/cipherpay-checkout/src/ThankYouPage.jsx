@@ -140,7 +140,7 @@ function CipherPayThankYou() {
           Your Zcash (ZEC) payment has been received. Thank you!
         </s-text>
       ) : (
-        <div>
+        <s-stack gap="small">
           <s-text>
             Your order is awaiting payment. Pay securely with Zcash (ZEC) via
             CipherPay.
@@ -150,7 +150,7 @@ function CipherPayThankYou() {
               Pay with CipherPay
             </s-button>
           </s-box>
-        </div>
+        </s-stack>
       )}
     </s-stack>
   );
