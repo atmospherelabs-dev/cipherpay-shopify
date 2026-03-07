@@ -1,8 +1,9 @@
-api_version = "2025-01"
+api_version = "2026-01"
 
 [[extensions]]
 name = "CipherPay Checkout"
 handle = "cipherpay-checkout"
+uid = "0b07d4b1-550f-a349-c80a-d9084dff61aa2b6dd6bf"
 type = "ui_extension"
 
 [extensions.capabilities]

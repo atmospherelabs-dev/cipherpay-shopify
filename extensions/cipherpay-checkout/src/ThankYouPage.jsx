@@ -1,7 +1,13 @@
+import "@shopify/ui-extensions/preact";
 import { render } from "preact";
 import { useState, useEffect } from "preact/hooks";
 
 const API_BASE = "https://shopify.cipherpay.app";
+
+function normalizeOrderId(orderId) {
+  if (!orderId) return null;
+  return String(orderId).replace("gid://shopify/Order/", "");
+}
 
 export default function () {
   render(<CipherPayCheckout />, document.body);
@@ -12,11 +18,11 @@ function CipherPayCheckout() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
-  const order = shopify.order;
-  const shop = shopify.shop;
+  const orderId = normalizeOrderId(shopify.orderConfirmation.current?.order?.id);
+  const shopDomain = shopify.shop.myshopifyDomain;
 
   useEffect(() => {
-    if (!order?.id || !shop?.myshopifyDomain) {
+    if (!orderId || !shopDomain) {
       setLoading(false);
       return;
     }
@@ -29,8 +35,8 @@ function CipherPayCheckout() {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            shop: shop.myshopifyDomain,
-            order_id: order.id.replace("gid://shopify/Order/", ""),
+            shop: shopDomain,
+            order_id: orderId,
           }),
         });
 
@@ -58,7 +64,7 @@ function CipherPayCheckout() {
 
     fetchPayment();
     return () => { cancelled = true; };
-  }, [order?.id, shop?.myshopifyDomain]);
+  }, [orderId, shopDomain]);
 
   if (loading) {
     return (
@@ -85,9 +91,8 @@ function CipherPayCheckout() {
         </s-text>
         <s-button
           variant="primary"
-          onClick={() => {
-            window.open(paymentUrl, "_blank");
-          }}
+          href={paymentUrl}
+          target="_blank"
         >
           Pay with Zcash (ZEC)
         </s-button>

@@ -5,16 +5,17 @@ import { createInvoice } from '@/lib/cipherpay';
 import crypto from 'crypto';
 
 export async function POST(req: NextRequest) {
-  const body = await req.text();
+  const rawBody = Buffer.from(await req.arrayBuffer());
   const hmac = req.headers.get('x-shopify-hmac-sha256') || '';
   const shopDomain = req.headers.get('x-shopify-shop-domain') || '';
 
-  if (!verifyWebhookHmac(body, hmac)) {
+  if (!verifyWebhookHmac(rawBody, hmac)) {
     console.error('orders/create webhook: HMAC verification failed');
     return NextResponse.json({ error: 'Invalid HMAC' }, { status: 401 });
   }
 
   try {
+    const body = rawBody.toString('utf8');
     const order = JSON.parse(body);
 
     const gateway = (order.gateway || '').toLowerCase();
