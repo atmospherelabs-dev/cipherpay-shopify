@@ -52,8 +52,8 @@ function CipherPayThankYou() {
 
     let cancelled = false;
     let attempts = 0;
-    const MAX_ATTEMPTS = 6;
-    const RETRY_MS = 2500;
+    const MAX_ATTEMPTS = 10;
+    const RETRY_MS = 2000;
 
     async function fetchPayment() {
       try {

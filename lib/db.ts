@@ -127,3 +127,10 @@ export async function updatePaymentSession(id: string, updates: {
 export async function deleteShop(shop: string): Promise<void> {
   await redis.del(shopKey(shop));
 }
+
+function orderLockKey(shop: string, orderId: string) { return `lock:order:${shop}:${orderId}`; }
+
+export async function acquireOrderLock(shop: string, orderId: string): Promise<boolean> {
+  const result = await redis.set(orderLockKey(shop, orderId), '1', { nx: true, ex: 30 });
+  return result === 'OK';
+}
