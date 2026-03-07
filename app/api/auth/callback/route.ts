@@ -4,10 +4,15 @@ import { saveShop } from '@/lib/db';
 
 export async function GET(req: NextRequest) {
   const params = Object.fromEntries(req.nextUrl.searchParams.entries());
-  const { shop, code } = params;
+  const { shop, code, state } = params;
 
   if (!shop || !code) {
     return NextResponse.json({ error: 'Missing shop or code' }, { status: 400 });
+  }
+
+  const storedState = req.cookies.get('shopify_oauth_state')?.value;
+  if (!storedState || storedState !== state) {
+    return NextResponse.json({ error: 'Invalid state parameter' }, { status: 403 });
   }
 
   if (!verifyHmac(params)) {
@@ -25,7 +30,11 @@ export async function GET(req: NextRequest) {
     }
 
     const host = process.env.HOST || req.nextUrl.origin;
-    return NextResponse.redirect(`${host}/settings?shop=${encodeURIComponent(shop)}`);
+    const redirectUrl = `${host}/settings?shop=${encodeURIComponent(shop)}`;
+
+    const response = NextResponse.redirect(redirectUrl);
+    response.cookies.delete('shopify_oauth_state');
+    return response;
   } catch (err) {
     console.error('OAuth callback error:', err);
     return NextResponse.json({ error: 'Installation failed' }, { status: 500 });

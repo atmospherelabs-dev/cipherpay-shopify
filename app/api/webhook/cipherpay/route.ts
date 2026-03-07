@@ -28,12 +28,20 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Shop not found' }, { status: 404 });
     }
 
-    if (shopData.cipherpay_webhook_secret && signature) {
-      const valid = verifyCipherPayWebhook(body, signature, timestamp, shopData.cipherpay_webhook_secret);
-      if (!valid) {
-        console.error('CipherPay webhook signature verification failed');
-        return NextResponse.json({ error: 'Invalid signature' }, { status: 401 });
-      }
+    if (!shopData.cipherpay_webhook_secret) {
+      console.error('CipherPay webhook rejected: no webhook secret configured for', session.shop);
+      return NextResponse.json({ error: 'Webhook secret not configured' }, { status: 403 });
+    }
+
+    if (!signature) {
+      console.error('CipherPay webhook rejected: missing signature header');
+      return NextResponse.json({ error: 'Missing signature' }, { status: 401 });
+    }
+
+    const valid = verifyCipherPayWebhook(body, signature, timestamp, shopData.cipherpay_webhook_secret);
+    if (!valid) {
+      console.error('CipherPay webhook signature verification failed');
+      return NextResponse.json({ error: 'Invalid signature' }, { status: 401 });
     }
 
     if (event === 'confirmed') {
