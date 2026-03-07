@@ -24,9 +24,9 @@ export async function createInvoice(
     product_name: string;
     amount: number;
     currency?: string;
+    product_id?: string;
     size?: string;
-    return_url?: string;
-    theme?: string;
+    refund_address?: string;
   }
 ): Promise<CipherPayInvoice> {
   const normalizedApiUrl = apiUrl.trim().replace(/\/+$/, '');
