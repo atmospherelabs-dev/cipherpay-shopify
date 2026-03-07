@@ -7,7 +7,9 @@ export default function InstallPage() {
 
   const handleInstall = (e: React.FormEvent) => {
     e.preventDefault();
-    let shopDomain = shop.trim();
+    let shopDomain = shop.trim()
+      .replace(/^https?:\/\//, '')
+      .replace(/\/+$/, '');
     if (!shopDomain.includes('.')) {
       shopDomain = `${shopDomain}.myshopify.com`;
     }
