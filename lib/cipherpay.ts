@@ -8,12 +8,11 @@ function sanitizeCipherPaySecret(value: string): string {
 
 export interface CipherPayInvoice {
   id: string;
-  memo: string;
+  memo_code: string;
   payment_address: string;
-  payment_uri: string;
-  status: string;
+  zcash_uri: string;
   price_zec: number;
-  price_eur: number | null;
+  price_eur: number;
   price_usd: number | null;
   expires_at: string;
 }
@@ -46,7 +45,23 @@ export async function createInvoice(
     throw new Error(`CipherPay invoice creation failed: ${res.status} ${text}`);
   }
 
-  return res.json();
+  const data = await res.json();
+  const id = data?.id ?? data?.invoice_id;
+
+  if (!id) {
+    throw new Error(`CipherPay invoice response missing invoice id: ${JSON.stringify(data)}`);
+  }
+
+  return {
+    id,
+    memo_code: data.memo_code,
+    payment_address: data.payment_address,
+    zcash_uri: data.zcash_uri ?? data.payment_uri,
+    price_zec: data.price_zec,
+    price_eur: data.price_eur,
+    price_usd: data.price_usd ?? null,
+    expires_at: data.expires_at,
+  };
 }
 
 export function verifyCipherPayWebhook(
