@@ -16,7 +16,7 @@ export async function GET(req: NextRequest) {
 
   try {
     const accessToken = await exchangeCodeForToken(shop, code);
-    saveShop(shop, accessToken);
+    await saveShop(shop, accessToken);
 
     const host = process.env.HOST || req.nextUrl.origin;
     return NextResponse.redirect(`${host}/settings?shop=${encodeURIComponent(shop)}`);

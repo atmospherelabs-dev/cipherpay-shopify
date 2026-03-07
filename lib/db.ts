@@ -1,44 +1,9 @@
-import Database from 'better-sqlite3';
-import path from 'path';
+import { Redis } from '@upstash/redis';
 
-const DB_PATH = path.join(process.cwd(), 'cipherpay-shopify.db');
-
-let _db: Database.Database | null = null;
-
-function getDb(): Database.Database {
-  if (!_db) {
-    _db = new Database(DB_PATH);
-    _db.pragma('journal_mode = WAL');
-    _db.pragma('foreign_keys = ON');
-
-    _db.exec(`
-      CREATE TABLE IF NOT EXISTS shops (
-        shop TEXT PRIMARY KEY,
-        access_token TEXT NOT NULL,
-        cipherpay_api_key TEXT,
-        cipherpay_api_url TEXT DEFAULT 'https://api.cipherpay.app',
-        cipherpay_webhook_secret TEXT,
-        installed_at TEXT DEFAULT (datetime('now')),
-        updated_at TEXT DEFAULT (datetime('now'))
-      );
-
-      CREATE TABLE IF NOT EXISTS payment_sessions (
-        id TEXT PRIMARY KEY,
-        shop TEXT NOT NULL,
-        shopify_order_id TEXT,
-        shopify_order_number TEXT,
-        cipherpay_invoice_id TEXT,
-        amount TEXT NOT NULL,
-        currency TEXT NOT NULL DEFAULT 'EUR',
-        status TEXT NOT NULL DEFAULT 'pending',
-        created_at TEXT DEFAULT (datetime('now')),
-        updated_at TEXT DEFAULT (datetime('now')),
-        FOREIGN KEY (shop) REFERENCES shops(shop) ON DELETE CASCADE
-      );
-    `);
-  }
-  return _db;
-}
+const redis = new Redis({
+  url: process.env.UPSTASH_REDIS_REST_URL!,
+  token: process.env.UPSTASH_REDIS_REST_TOKEN!,
+});
 
 export interface Shop {
   shop: string;
@@ -46,124 +11,109 @@ export interface Shop {
   cipherpay_api_key: string | null;
   cipherpay_api_url: string;
   cipherpay_webhook_secret: string | null;
-  installed_at: string;
-  updated_at: string;
 }
 
 export interface PaymentSession {
   id: string;
   shop: string;
   shopify_order_id: string | null;
-  shopify_order_number: string | null;
   cipherpay_invoice_id: string | null;
   amount: string;
   currency: string;
   status: string;
-  created_at: string;
-  updated_at: string;
 }
 
-export function saveShop(shop: string, accessToken: string): void {
-  const db = getDb();
-  db.prepare(`
-    INSERT INTO shops (shop, access_token)
-    VALUES (?, ?)
-    ON CONFLICT(shop) DO UPDATE SET
-      access_token = excluded.access_token,
-      updated_at = datetime('now')
-  `).run(shop, accessToken);
+function shopKey(shop: string) { return `shop:${shop}`; }
+function sessionKey(id: string) { return `session:${id}`; }
+function invoiceMapKey(invoiceId: string) { return `invoice:${invoiceId}`; }
+
+export async function saveShop(shop: string, accessToken: string): Promise<void> {
+  const existing = await getShop(shop);
+  const data: Shop = {
+    shop,
+    access_token: accessToken,
+    cipherpay_api_key: existing?.cipherpay_api_key ?? null,
+    cipherpay_api_url: existing?.cipherpay_api_url ?? 'https://api.cipherpay.app',
+    cipherpay_webhook_secret: existing?.cipherpay_webhook_secret ?? null,
+  };
+  await redis.set(shopKey(shop), JSON.stringify(data));
 }
 
-export function getShop(shop: string): Shop | undefined {
-  const db = getDb();
-  return db.prepare('SELECT * FROM shops WHERE shop = ?').get(shop) as Shop | undefined;
+export async function getShop(shop: string): Promise<Shop | null> {
+  const data = await redis.get<string>(shopKey(shop));
+  if (!data) return null;
+  return typeof data === 'string' ? JSON.parse(data) : data as unknown as Shop;
 }
 
-export function updateShopConfig(
+export async function updateShopConfig(
   shop: string,
   config: { cipherpay_api_key?: string; cipherpay_api_url?: string; cipherpay_webhook_secret?: string }
-): void {
-  const db = getDb();
-  const fields: string[] = [];
-  const values: unknown[] = [];
+): Promise<void> {
+  const existing = await getShop(shop);
+  if (!existing) return;
 
-  if (config.cipherpay_api_key !== undefined) {
-    fields.push('cipherpay_api_key = ?');
-    values.push(config.cipherpay_api_key);
-  }
-  if (config.cipherpay_api_url !== undefined) {
-    fields.push('cipherpay_api_url = ?');
-    values.push(config.cipherpay_api_url);
-  }
-  if (config.cipherpay_webhook_secret !== undefined) {
-    fields.push('cipherpay_webhook_secret = ?');
-    values.push(config.cipherpay_webhook_secret);
-  }
+  if (config.cipherpay_api_key !== undefined) existing.cipherpay_api_key = config.cipherpay_api_key;
+  if (config.cipherpay_api_url !== undefined) existing.cipherpay_api_url = config.cipherpay_api_url;
+  if (config.cipherpay_webhook_secret !== undefined) existing.cipherpay_webhook_secret = config.cipherpay_webhook_secret;
 
-  if (fields.length === 0) return;
-
-  fields.push("updated_at = datetime('now')");
-  values.push(shop);
-
-  db.prepare(`UPDATE shops SET ${fields.join(', ')} WHERE shop = ?`).run(...values);
+  await redis.set(shopKey(shop), JSON.stringify(existing));
 }
 
-export function createPaymentSession(session: {
+export async function createPaymentSession(session: {
   id: string;
   shop: string;
   shopify_order_id?: string;
-  shopify_order_number?: string;
+  cipherpay_invoice_id?: string;
   amount: string;
   currency: string;
-}): void {
-  const db = getDb();
-  db.prepare(`
-    INSERT INTO payment_sessions (id, shop, shopify_order_id, shopify_order_number, amount, currency)
-    VALUES (?, ?, ?, ?, ?, ?)
-  `).run(session.id, session.shop, session.shopify_order_id ?? null, session.shopify_order_number ?? null, session.amount, session.currency);
+}): Promise<void> {
+  const data: PaymentSession = {
+    id: session.id,
+    shop: session.shop,
+    shopify_order_id: session.shopify_order_id ?? null,
+    cipherpay_invoice_id: session.cipherpay_invoice_id ?? null,
+    amount: session.amount,
+    currency: session.currency,
+    status: 'pending',
+  };
+  // Sessions expire after 24 hours
+  await redis.set(sessionKey(session.id), JSON.stringify(data), { ex: 86400 });
+
+  if (session.cipherpay_invoice_id) {
+    await redis.set(invoiceMapKey(session.cipherpay_invoice_id), session.id, { ex: 86400 });
+  }
 }
 
-export function getPaymentSession(id: string): PaymentSession | undefined {
-  const db = getDb();
-  return db.prepare('SELECT * FROM payment_sessions WHERE id = ?').get(id) as PaymentSession | undefined;
+export async function getPaymentSession(id: string): Promise<PaymentSession | null> {
+  const data = await redis.get<string>(sessionKey(id));
+  if (!data) return null;
+  return typeof data === 'string' ? JSON.parse(data) : data as unknown as PaymentSession;
 }
 
-export function getPaymentSessionByInvoiceId(invoiceId: string): PaymentSession | undefined {
-  const db = getDb();
-  return db.prepare('SELECT * FROM payment_sessions WHERE cipherpay_invoice_id = ?').get(invoiceId) as PaymentSession | undefined;
+export async function getPaymentSessionByInvoiceId(invoiceId: string): Promise<PaymentSession | null> {
+  const sessionId = await redis.get<string>(invoiceMapKey(invoiceId));
+  if (!sessionId) return null;
+  return getPaymentSession(typeof sessionId === 'string' ? sessionId : String(sessionId));
 }
 
-export function updatePaymentSession(id: string, updates: {
+export async function updatePaymentSession(id: string, updates: {
   cipherpay_invoice_id?: string;
   shopify_order_id?: string;
   status?: string;
-}): void {
-  const db = getDb();
-  const fields: string[] = [];
-  const values: unknown[] = [];
+}): Promise<void> {
+  const session = await getPaymentSession(id);
+  if (!session) return;
 
   if (updates.cipherpay_invoice_id !== undefined) {
-    fields.push('cipherpay_invoice_id = ?');
-    values.push(updates.cipherpay_invoice_id);
+    session.cipherpay_invoice_id = updates.cipherpay_invoice_id;
+    await redis.set(invoiceMapKey(updates.cipherpay_invoice_id), id, { ex: 86400 });
   }
-  if (updates.shopify_order_id !== undefined) {
-    fields.push('shopify_order_id = ?');
-    values.push(updates.shopify_order_id);
-  }
-  if (updates.status !== undefined) {
-    fields.push('status = ?');
-    values.push(updates.status);
-  }
+  if (updates.shopify_order_id !== undefined) session.shopify_order_id = updates.shopify_order_id;
+  if (updates.status !== undefined) session.status = updates.status;
 
-  if (fields.length === 0) return;
-
-  fields.push("updated_at = datetime('now')");
-  values.push(id);
-
-  db.prepare(`UPDATE payment_sessions SET ${fields.join(', ')} WHERE id = ?`).run(...values);
+  await redis.set(sessionKey(id), JSON.stringify(session), { ex: 86400 });
 }
 
-export function deleteShop(shop: string): void {
-  const db = getDb();
-  db.prepare('DELETE FROM shops WHERE shop = ?').run(shop);
+export async function deleteShop(shop: string): Promise<void> {
+  await redis.del(shopKey(shop));
 }

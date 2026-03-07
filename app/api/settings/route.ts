@@ -7,7 +7,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: 'Missing shop' }, { status: 400 });
   }
 
-  const shopData = getShop(shop);
+  const shopData = await getShop(shop);
   if (!shopData) {
     return NextResponse.json({ error: 'Shop not found' }, { status: 404 });
   }
@@ -32,12 +32,12 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Missing shop' }, { status: 400 });
   }
 
-  const shopData = getShop(shop);
+  const shopData = await getShop(shop);
   if (!shopData) {
     return NextResponse.json({ error: 'Shop not found. Install the app first.' }, { status: 404 });
   }
 
-  updateShopConfig(shop, {
+  await updateShopConfig(shop, {
     cipherpay_api_key: cipherpay_api_key || undefined,
     cipherpay_api_url: cipherpay_api_url || undefined,
     cipherpay_webhook_secret: cipherpay_webhook_secret || undefined,
