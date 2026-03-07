@@ -8,10 +8,11 @@
  */
 (function () {
   var script = document.currentScript;
-  if (!script) return;
+  var appUrl = script ? script.src.replace('/checkout.js', '') : 'https://shopify.cipherpay.app';
 
-  var shop = script.getAttribute('data-shop');
-  var appUrl = script.src.replace('/checkout.js', '');
+  var shop = (script && script.getAttribute('data-shop')) ||
+    (window.Shopify && window.Shopify.shop) ||
+    window.location.hostname;
 
   if (!shop || !window.Shopify || !window.Shopify.checkout) return;
 

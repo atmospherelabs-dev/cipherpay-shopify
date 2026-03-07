@@ -11,6 +11,26 @@ interface ShopConfig {
   webhook_url: string;
 }
 
+function CopyBtn({ text }: { text: string }) {
+  const [copied, setCopied] = useState(false);
+  return (
+    <button
+      type="button"
+      onClick={() => { navigator.clipboard.writeText(text); setCopied(true); setTimeout(() => setCopied(false), 2000); }}
+      style={{
+        padding: '4px 10px', fontSize: 10, fontWeight: 600, letterSpacing: 1,
+        backgroundColor: copied ? '#22c55e' : 'transparent',
+        color: copied ? '#000' : '#71717a',
+        border: '1px solid #27272a', borderRadius: 4,
+        cursor: 'pointer', fontFamily: 'inherit', transition: 'all 0.15s',
+        whiteSpace: 'nowrap',
+      }}
+    >
+      {copied ? 'COPIED' : 'COPY'}
+    </button>
+  );
+}
+
 export default function SettingsPage() {
   const [shop, setShop] = useState('');
   const [apiKey, setApiKey] = useState('');
@@ -21,6 +41,8 @@ export default function SettingsPage() {
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
+  const [editing, setEditing] = useState(false);
+  const [hasConfig, setHasConfig] = useState(false);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -36,6 +58,7 @@ export default function SettingsPage() {
           if (data.cipherpay_webhook_secret) setWebhookSecret(data.cipherpay_webhook_secret);
           setPaymentUrl(data.payment_url || '');
           setWebhookUrl(data.webhook_url || '');
+          setHasConfig(!!(data.cipherpay_api_key && data.cipherpay_webhook_secret));
           setLoading(false);
         })
         .catch(() => setLoading(false));
@@ -62,6 +85,8 @@ export default function SettingsPage() {
 
     if (res.ok) {
       setSaved(true);
+      setEditing(false);
+      setHasConfig(true);
       setTimeout(() => setSaved(false), 3000);
     } else {
       setError('Failed to save settings');
@@ -75,6 +100,11 @@ export default function SettingsPage() {
       </div>
     );
   }
+
+  const mask = (val: string, prefix: number = 8, suffix: number = 4) => {
+    if (!val || val.length < prefix + suffix + 4) return val;
+    return val.slice(0, prefix) + '••••••••' + val.slice(-suffix);
+  };
 
   const inputStyle: React.CSSProperties = {
     width: '100%',
@@ -98,6 +128,21 @@ export default function SettingsPage() {
     marginBottom: 6,
   };
 
+  const readOnlyFieldStyle: React.CSSProperties = {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: '10px 12px',
+    backgroundColor: '#18181b',
+    border: '1px solid #27272a',
+    borderRadius: 4,
+    fontSize: 13,
+    fontFamily: 'monospace',
+    color: '#a1a1aa',
+  };
+
+  const isEditing = editing || !hasConfig;
+
   return (
     <div style={{ maxWidth: 560, margin: '80px auto', padding: '0 24px' }}>
       <div style={{
@@ -113,71 +158,119 @@ export default function SettingsPage() {
           {shop}
         </p>
 
-        <form onSubmit={handleSave}>
-          <div style={{ marginBottom: 20 }}>
-            <label style={labelStyle}>CipherPay API Key</label>
-            <input
-              type="password"
-              placeholder="cpay_..."
-              value={apiKey}
-              onChange={(e) => setApiKey(e.target.value)}
-              required
-              style={inputStyle}
-            />
-            <p style={{ fontSize: 11, color: '#52525b', marginTop: 4, marginBottom: 0 }}>
-              From your CipherPay merchant dashboard &gt; Settings &gt; API Keys
-            </p>
+        {saved && <p style={{ color: '#22c55e', fontSize: 12, marginBottom: 16, textAlign: 'center' }}>Settings saved</p>}
+        {error && <p style={{ color: '#ef4444', fontSize: 12, marginBottom: 16, textAlign: 'center' }}>{error}</p>}
+
+        {isEditing ? (
+          <form onSubmit={handleSave}>
+            <div style={{ marginBottom: 20 }}>
+              <label style={labelStyle}>CipherPay API Key</label>
+              <input
+                type="password"
+                placeholder="cpay_..."
+                value={apiKey}
+                onChange={(e) => setApiKey(e.target.value)}
+                required
+                style={inputStyle}
+              />
+              <p style={{ fontSize: 11, color: '#52525b', marginTop: 4, marginBottom: 0 }}>
+                From your CipherPay merchant dashboard &gt; Settings &gt; API Keys
+              </p>
+            </div>
+
+            <div style={{ marginBottom: 20 }}>
+              <label style={labelStyle}>CipherPay Webhook Secret</label>
+              <input
+                type="password"
+                placeholder="whsec_..."
+                value={webhookSecret}
+                onChange={(e) => setWebhookSecret(e.target.value)}
+                required
+                style={inputStyle}
+              />
+              <p style={{ fontSize: 11, color: '#52525b', marginTop: 4, marginBottom: 0 }}>
+                From your CipherPay dashboard &gt; Settings &gt; Webhook Secret
+              </p>
+            </div>
+
+            <div style={{ marginBottom: 20 }}>
+              <label style={labelStyle}>CipherPay API URL</label>
+              <input
+                type="url"
+                value={apiUrl}
+                onChange={(e) => setApiUrl(e.target.value)}
+                style={inputStyle}
+              />
+              <p style={{ fontSize: 11, color: '#52525b', marginTop: 4, marginBottom: 0 }}>
+                Use https://api.testnet.cipherpay.app for testing
+              </p>
+            </div>
+
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button
+                type="submit"
+                style={{
+                  padding: '10px 24px', backgroundColor: '#00D4FF', color: '#09090b',
+                  border: 'none', borderRadius: 4, fontFamily: 'inherit',
+                  fontSize: 13, fontWeight: 600, cursor: 'pointer', flex: 1,
+                }}
+              >
+                SAVE SETTINGS
+              </button>
+              {hasConfig && (
+                <button
+                  type="button"
+                  onClick={() => setEditing(false)}
+                  style={{
+                    padding: '10px 24px', backgroundColor: 'transparent', color: '#71717a',
+                    border: '1px solid #27272a', borderRadius: 4, fontFamily: 'inherit',
+                    fontSize: 13, fontWeight: 600, cursor: 'pointer',
+                  }}
+                >
+                  CANCEL
+                </button>
+              )}
+            </div>
+          </form>
+        ) : (
+          <div>
+            <div style={{ marginBottom: 20 }}>
+              <label style={labelStyle}>CipherPay API Key</label>
+              <div style={readOnlyFieldStyle}>
+                <span>{mask(apiKey)}</span>
+                <CopyBtn text={apiKey} />
+              </div>
+            </div>
+
+            <div style={{ marginBottom: 20 }}>
+              <label style={labelStyle}>CipherPay Webhook Secret</label>
+              <div style={readOnlyFieldStyle}>
+                <span>{mask(webhookSecret)}</span>
+                <CopyBtn text={webhookSecret} />
+              </div>
+            </div>
+
+            <div style={{ marginBottom: 20 }}>
+              <label style={labelStyle}>CipherPay API URL</label>
+              <div style={readOnlyFieldStyle}>
+                <span style={{ color: '#00D4FF' }}>{apiUrl}</span>
+                <CopyBtn text={apiUrl} />
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setEditing(true)}
+              style={{
+                padding: '10px 24px', backgroundColor: 'transparent', color: '#a1a1aa',
+                border: '1px solid #27272a', borderRadius: 4, fontFamily: 'inherit',
+                fontSize: 13, fontWeight: 600, cursor: 'pointer', width: '100%',
+              }}
+            >
+              EDIT SETTINGS
+            </button>
           </div>
-
-          <div style={{ marginBottom: 20 }}>
-            <label style={labelStyle}>CipherPay Webhook Secret</label>
-            <input
-              type="password"
-              placeholder="whsec_..."
-              value={webhookSecret}
-              onChange={(e) => setWebhookSecret(e.target.value)}
-              required
-              style={inputStyle}
-            />
-            <p style={{ fontSize: 11, color: '#52525b', marginTop: 4, marginBottom: 0 }}>
-              From your CipherPay dashboard &gt; Settings &gt; Webhook Secret
-            </p>
-          </div>
-
-          <div style={{ marginBottom: 20 }}>
-            <label style={labelStyle}>CipherPay API URL</label>
-            <input
-              type="url"
-              value={apiUrl}
-              onChange={(e) => setApiUrl(e.target.value)}
-              style={inputStyle}
-            />
-            <p style={{ fontSize: 11, color: '#52525b', marginTop: 4, marginBottom: 0 }}>
-              Use https://api.testnet.cipherpay.app for testing
-            </p>
-          </div>
-
-          <button
-            type="submit"
-            style={{
-              padding: '10px 24px',
-              backgroundColor: '#00D4FF',
-              color: '#09090b',
-              border: 'none',
-              borderRadius: 4,
-              fontFamily: 'inherit',
-              fontSize: 13,
-              fontWeight: 600,
-              cursor: 'pointer',
-              width: '100%',
-            }}
-          >
-            SAVE SETTINGS
-          </button>
-
-          {saved && <p style={{ color: '#22c55e', fontSize: 12, marginTop: 12, textAlign: 'center' }}>Settings saved</p>}
-          {error && <p style={{ color: '#ef4444', fontSize: 12, marginTop: 12, textAlign: 'center' }}>{error}</p>}
-        </form>
+        )}
 
         <div style={{ marginTop: 32, paddingTop: 24, borderTop: '1px solid #27272a' }}>
           <h3 style={{ fontSize: 13, color: '#a1a1aa', marginTop: 0, marginBottom: 12 }}>Setup Instructions</h3>
@@ -186,39 +279,24 @@ export default function SettingsPage() {
             <p style={{ marginTop: 0 }}>
               <strong style={{ color: '#a1a1aa' }}>1.</strong> In your CipherPay dashboard, set your webhook URL to:
             </p>
-            <code style={{
-              display: 'block',
-              padding: '8px 12px',
-              backgroundColor: '#18181b',
-              borderRadius: 4,
-              fontSize: 11,
-              color: '#00D4FF',
-              marginBottom: 16,
-              wordBreak: 'break-all',
-            }}>
-              {webhookUrl || `${typeof window !== 'undefined' ? window.location.origin : ''}/api/webhook/cipherpay`}
-            </code>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16 }}>
+              <code style={{
+                flex: 1, display: 'block', padding: '8px 12px',
+                backgroundColor: '#18181b', borderRadius: 4,
+                fontSize: 11, color: '#00D4FF', wordBreak: 'break-all',
+              }}>
+                {webhookUrl || `${typeof window !== 'undefined' ? window.location.origin : ''}/api/webhook/cipherpay`}
+              </code>
+              <CopyBtn text={webhookUrl || `${typeof window !== 'undefined' ? window.location.origin : ''}/api/webhook/cipherpay`} />
+            </div>
 
             <p>
               <strong style={{ color: '#a1a1aa' }}>2.</strong> In your Shopify admin, go to <strong style={{ color: '#a1a1aa' }}>Settings → Payments → Manual payment methods</strong> and add a method called <strong style={{ color: '#a1a1aa' }}>Pay with Zcash (ZEC)</strong>.
             </p>
 
             <p>
-              <strong style={{ color: '#a1a1aa' }}>3.</strong> In <strong style={{ color: '#a1a1aa' }}>Settings → Checkout → Additional scripts</strong>, paste:
+              <strong style={{ color: '#a1a1aa' }}>3.</strong> The checkout script is <strong style={{ color: '#22c55e' }}>automatically installed</strong> when you install the app. No manual setup needed.
             </p>
-            <code style={{
-              display: 'block',
-              padding: '8px 12px',
-              backgroundColor: '#18181b',
-              borderRadius: 4,
-              fontSize: 11,
-              color: '#e4e4e7',
-              marginBottom: 16,
-              whiteSpace: 'pre-wrap',
-              wordBreak: 'break-all',
-            }}>
-              {`<script src="${paymentUrl || (typeof window !== 'undefined' ? window.location.origin : '')}/checkout.js" data-shop="${shop}"></script>`}
-            </code>
 
             <p style={{ marginBottom: 0 }}>
               <strong style={{ color: '#a1a1aa' }}>4.</strong> Place a test order to verify the payment flow.

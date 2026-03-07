@@ -2,7 +2,7 @@ import crypto from 'crypto';
 
 const SHOPIFY_API_KEY = process.env.SHOPIFY_API_KEY!;
 const SHOPIFY_API_SECRET = process.env.SHOPIFY_API_SECRET!;
-const SHOPIFY_SCOPES = process.env.SHOPIFY_SCOPES || 'read_orders,write_orders';
+const SHOPIFY_SCOPES = process.env.SHOPIFY_SCOPES || 'read_orders,write_orders,write_script_tags';
 const HOST = process.env.HOST!;
 
 export function buildInstallUrl(shop: string): string {
@@ -90,6 +90,31 @@ export async function markOrderAsPaid(
   });
 
   return txRes;
+}
+
+export async function registerScriptTag(
+  shop: string,
+  accessToken: string,
+): Promise<void> {
+  const host = process.env.HOST || 'https://shopify.cipherpay.app';
+  const scriptUrl = `${host}/checkout.js`;
+
+  const existing = await shopifyAdminApi(shop, accessToken, 'script_tags.json');
+  const alreadyInstalled = existing.script_tags?.some(
+    (tag: { src: string }) => tag.src === scriptUrl
+  );
+
+  if (!alreadyInstalled) {
+    await shopifyAdminApi(shop, accessToken, 'script_tags.json', {
+      method: 'POST',
+      body: {
+        script_tag: {
+          event: 'onload',
+          src: scriptUrl,
+        },
+      },
+    });
+  }
 }
 
 export function verifyWebhookHmac(body: string, hmacHeader: string): boolean {
