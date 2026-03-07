@@ -97,6 +97,9 @@ export async function POST(req: NextRequest) {
         theme: 'dark',
       }
     );
+    if (!invoice.id) {
+      throw new Error('CipherPay invoice response missing id');
+    }
 
     const sessionId = crypto.randomUUID();
     await createPaymentSession({

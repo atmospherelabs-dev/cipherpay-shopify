@@ -95,6 +95,9 @@ export async function POST(req: NextRequest) {
       shopData.cipherpay_api_key,
       invoiceParams
     );
+    if (!invoice.id) {
+      throw new Error('CipherPay invoice response missing id');
+    }
     console.log('orders/create webhook: invoice created', {
       shopDomain,
       orderId: order.id,
