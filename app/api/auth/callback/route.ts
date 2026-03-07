@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { verifyHmac, exchangeCodeForToken, registerScriptTag } from '@/lib/shopify';
+import { verifyHmac, exchangeCodeForToken, registerWebhooks } from '@/lib/shopify';
 import { saveShop } from '@/lib/db';
 
 export async function GET(req: NextRequest) {
@@ -19,9 +19,9 @@ export async function GET(req: NextRequest) {
     await saveShop(shop, accessToken);
 
     try {
-      await registerScriptTag(shop, accessToken);
+      await registerWebhooks(shop, accessToken);
     } catch (err) {
-      console.error('ScriptTag registration failed (non-blocking):', err);
+      console.error('Webhook registration failed (non-blocking):', err);
     }
 
     const host = process.env.HOST || req.nextUrl.origin;
