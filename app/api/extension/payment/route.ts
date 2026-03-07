@@ -16,9 +16,15 @@ export async function OPTIONS() {
   return new NextResponse(null, { status: 204, headers: corsHeaders() });
 }
 
+function normalizeOrderId(id: string): string {
+  return String(id).replace(/gid:\/\/shopify\/\w+\//g, '');
+}
+
 export async function POST(req: NextRequest) {
   try {
-    const { shop, order_id } = await req.json();
+    const body = await req.json();
+    const shop = body.shop;
+    const order_id = normalizeOrderId(body.order_id || '');
     console.log('extension/payment: request received', { shop, order_id });
 
     if (!shop || !order_id) {

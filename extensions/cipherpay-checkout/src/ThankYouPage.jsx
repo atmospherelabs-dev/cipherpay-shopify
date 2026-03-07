@@ -1,172 +1,107 @@
+/** @jsxImportSource preact */
 import "@shopify/ui-extensions/preact";
 import { render } from "preact";
-import { useState, useEffect } from "preact/hooks";
+import { useState, useCallback } from "preact/hooks";
 
 const API_BASE = "https://shopify.cipherpay.app";
-const MAX_RETRIES = 5;
-const RETRY_DELAY_MS = 3000;
 
-function normalizeOrderId(orderId) {
-  if (!orderId) return null;
-  return String(orderId).replace("gid://shopify/Order/", "");
+function normalizeId(id) {
+  if (!id) return null;
+  return String(id).replace(/gid:\/\/shopify\/\w+\//g, "");
 }
 
-function resolveOrderId() {
+function getOrderId() {
   try {
     const oc = shopify.orderConfirmation;
-    if (oc) {
-      const id = oc.value?.order?.id ?? oc.current?.order?.id;
-      if (id) return normalizeOrderId(id);
-    }
+    const id = oc?.value?.order?.id ?? oc?.current?.order?.id;
+    if (id) return normalizeId(id);
   } catch (_) {}
-
   try {
     const o = shopify.order;
-    if (o) {
-      const id = o.value?.id ?? o.current?.id ?? o.id;
-      if (id) return normalizeOrderId(id);
-    }
+    const id = o?.value?.id ?? o?.current?.id;
+    if (id) return normalizeId(id);
   } catch (_) {}
-
   return null;
 }
 
-function debugShopifyGlobal() {
-  try {
-    return Object.keys(shopify || {}).join(", ") || "(empty)";
-  } catch (_) {
-    return "(error)";
-  }
-}
-
-function sleep(ms) {
-  return new Promise((r) => setTimeout(r, ms));
+function getShop() {
+  try { return shopify.shop.myshopifyDomain; } catch (_) { return null; }
 }
 
 export default function () {
-  render(<CipherPayCheckout />, document.body);
+  render(<CipherPayThankYou />, document.body);
 }
 
-function CipherPayCheckout() {
+function CipherPayThankYou() {
+  const [state, setState] = useState("idle");
   const [paymentUrl, setPaymentUrl] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [debug, setDebug] = useState(null);
+  const [error, setError] = useState(null);
 
-  const orderId = resolveOrderId();
-  const shopDomain = shopify?.shop?.myshopifyDomain;
+  const handleClick = useCallback(async () => {
+    const orderId = getOrderId();
+    const shop = getShop();
 
-  useEffect(() => {
-    if (!shopDomain) {
-      setDebug(`No shopDomain. keys: ${debugShopifyGlobal()}`);
-      setLoading(false);
+    if (!orderId || !shop) {
+      setError("Could not detect order. Please contact the store.");
       return;
     }
 
-    if (!orderId) {
-      setDebug(`Waiting for orderId. keys: ${debugShopifyGlobal()}`);
-      const timeout = setTimeout(() => {
-        if (!resolveOrderId()) {
-          setDebug(`No orderId after 10s. keys: ${debugShopifyGlobal()}`);
-          setLoading(false);
-        }
-      }, 10000);
-      return () => clearTimeout(timeout);
-    }
+    setState("loading");
+    setError(null);
 
-    let cancelled = false;
-    setLoading(true);
-    setDebug(null);
+    try {
+      const res = await fetch(`${API_BASE}/api/extension/payment`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ shop, order_id: orderId }),
+      });
+      const data = await res.json();
 
-    async function fetchWithRetry() {
-      for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
-        if (cancelled) return;
-
-        try {
-          const res = await fetch(`${API_BASE}/api/extension/payment`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              shop: shopDomain,
-              order_id: orderId,
-            }),
-          });
-
-          if (res.ok) {
-            const data = await res.json();
-            if (data.payment_url) {
-              if (!cancelled) setPaymentUrl(data.payment_url);
-              return;
-            }
-            if (data.skip) {
-              // Not a Zcash order
-              return;
-            }
-          }
-
-          // No payment URL yet -- invoice may not be created yet
-          if (attempt < MAX_RETRIES) {
-            if (!cancelled) {
-              setDebug(`Waiting for invoice... (attempt ${attempt}/${MAX_RETRIES})`);
-            }
-            await sleep(RETRY_DELAY_MS);
-          }
-        } catch (err) {
-          console.error("CipherPay extension error:", err);
-          if (attempt < MAX_RETRIES) {
-            await sleep(RETRY_DELAY_MS);
-          }
-        }
+      if (data.payment_url) {
+        setPaymentUrl(data.payment_url);
+        setState("ready");
+      } else if (data.skip) {
+        setState("skip");
+      } else {
+        setError("Payment not ready yet. Try again in a few seconds.");
+        setState("idle");
       }
-
-      if (!cancelled) {
-        setDebug(`Could not load payment after ${MAX_RETRIES} attempts`);
-      }
+    } catch (err) {
+      setError("Error loading payment. Please try again.");
+      setState("idle");
     }
+  }, []);
 
-    fetchWithRetry().finally(() => {
-      if (!cancelled) setLoading(false);
-    });
+  if (state === "skip") return null;
 
-    return () => { cancelled = true; };
-  }, [orderId, shopDomain]);
-
-  if (loading) {
+  if (state === "ready" && paymentUrl) {
     return (
-      <s-box padding="base" borderRadius="base">
-        <s-stack blockAlignment="center" inlineAlignment="center" gap="base">
-          <s-spinner />
-          <s-text>{debug || "Loading payment details..."}</s-text>
+      <s-box border="base" padding="base" borderRadius="base">
+        <s-stack gap="base">
+          <s-heading>Pay with Zcash (ZEC)</s-heading>
+          <s-text>Your payment link is ready.</s-text>
+          <s-button variant="primary" href={paymentUrl} target="_blank">
+            Open Zcash Payment Page
+          </s-button>
         </s-stack>
       </s-box>
     );
   }
 
-  if (debug && !paymentUrl) {
-    return (
-      <s-box padding="base" borderRadius="base" border="base">
-        <s-text size="small" appearance="subdued">CipherPay: {debug}</s-text>
-      </s-box>
-    );
-  }
-
-  if (!paymentUrl) return null;
-
   return (
     <s-box border="base" padding="base" borderRadius="base">
       <s-stack gap="base">
-        <s-heading>Complete Your Payment</s-heading>
-        <s-text>
-          Your order requires a Zcash (ZEC) payment. Click the button below to
-          open the secure payment page where you can scan a QR code or copy the
-          payment address.
-        </s-text>
+        <s-heading>Pay with Zcash (ZEC)</s-heading>
+        <s-text>Click below to complete your payment with Zcash.</s-text>
         <s-button
           variant="primary"
-          href={paymentUrl}
-          target="_blank"
+          loading={state === "loading" || undefined}
+          disabled={state === "loading" || undefined}
+          onClick={handleClick}
         >
           Pay with Zcash (ZEC)
         </s-button>
+        {error && <s-text appearance="warning">{error}</s-text>}
       </s-stack>
     </s-box>
   );
