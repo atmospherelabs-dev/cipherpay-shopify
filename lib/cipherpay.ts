@@ -17,12 +17,11 @@ export async function createInvoice(
   apiKey: string,
   params: {
     product_name: string;
-    price_eur?: number;
-    price_usd?: number;
+    amount: number;
+    currency?: string;
     size?: string;
     return_url?: string;
     theme?: string;
-    currency?: string;
   }
 ): Promise<CipherPayInvoice> {
   const res = await fetch(`${apiUrl}/api/invoices`, {
