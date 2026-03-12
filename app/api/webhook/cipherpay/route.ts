@@ -44,6 +44,12 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Invalid signature' }, { status: 401 });
     }
 
+    const tsMs = new Date(timestamp).getTime();
+    if (isNaN(tsMs) || Math.abs(Date.now() - tsMs) > 5 * 60 * 1000) {
+      console.error('CipherPay webhook rejected: timestamp outside 5-minute window');
+      return NextResponse.json({ error: 'Timestamp expired' }, { status: 401 });
+    }
+
     if (event === 'confirmed') {
       await updatePaymentSession(session.id, { status: 'confirmed' });
 
