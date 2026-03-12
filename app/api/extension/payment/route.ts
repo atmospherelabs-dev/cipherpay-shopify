@@ -35,6 +35,13 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    if (!shop.match(/^[a-zA-Z0-9][a-zA-Z0-9-]*\.myshopify\.com$/)) {
+      return NextResponse.json(
+        { error: 'Invalid shop domain' },
+        { status: 400, headers: corsHeaders() }
+      );
+    }
+
     const shopData = await getShop(shop);
     if (!shopData || !shopData.cipherpay_api_key) {
       console.log('extension/payment: shop not configured', { shop });

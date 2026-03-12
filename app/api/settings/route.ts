@@ -33,26 +33,14 @@ function verifyHmac(query: Record<string, string>): boolean {
   }
 }
 
-async function authenticateShop(req: NextRequest, shop: string): Promise<boolean> {
+async function authenticateShop(req: NextRequest): Promise<boolean> {
   const hmac = req.nextUrl.searchParams.get('hmac')
     || req.headers.get('x-shopify-hmac');
 
-  if (hmac) {
-    const params = Object.fromEntries(req.nextUrl.searchParams.entries());
-    return verifyHmac(params);
-  }
+  if (!hmac) return false;
 
-  const shopData = await getShop(shop);
-  if (!shopData?.access_token) return false;
-
-  try {
-    const res = await fetch(`https://${shop}/admin/api/2024-10/shop.json`, {
-      headers: { 'X-Shopify-Access-Token': shopData.access_token },
-    });
-    return res.ok;
-  } catch {
-    return false;
-  }
+  const params = Object.fromEntries(req.nextUrl.searchParams.entries());
+  return verifyHmac(params);
 }
 
 export async function GET(req: NextRequest) {
@@ -61,7 +49,11 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: 'Missing shop' }, { status: 400 });
   }
 
-  const authenticated = await authenticateShop(req, shop);
+  if (!shop.match(/^[a-zA-Z0-9][a-zA-Z0-9-]*\.myshopify\.com$/)) {
+    return NextResponse.json({ error: 'Invalid shop domain' }, { status: 400 });
+  }
+
+  const authenticated = await authenticateShop(req);
   if (!authenticated) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
@@ -91,7 +83,11 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Missing shop' }, { status: 400 });
   }
 
-  const authenticated = await authenticateShop(req, shop);
+  if (!shop.match(/^[a-zA-Z0-9][a-zA-Z0-9-]*\.myshopify\.com$/)) {
+    return NextResponse.json({ error: 'Invalid shop domain' }, { status: 400 });
+  }
+
+  const authenticated = await authenticateShop(req);
   if (!authenticated) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
