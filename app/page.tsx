@@ -39,7 +39,7 @@ export default function InstallPage() {
           <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
             <input
               type="text"
-              placeholder="my-store.myshopify.com"
+              placeholder="https://your-store.myshopify.com"
               value={shop}
               onChange={(e) => setShop(e.target.value)}
               required

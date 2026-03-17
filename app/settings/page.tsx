@@ -293,36 +293,25 @@ export default function SettingsPage() {
             </div>
 
             <p>
-              <strong style={{ color: '#a1a1aa' }}>2.</strong> In your Shopify admin, go to <strong style={{ color: '#a1a1aa' }}>Settings → Payments → Manual payment methods</strong> and add a method called <strong style={{ color: '#a1a1aa' }}>Pay with Zcash (ZEC)</strong>.
+              <strong style={{ color: '#a1a1aa' }}>2.</strong> Go to <strong style={{ color: '#a1a1aa' }}>Settings → Payments → Additional payment methods</strong> in your Shopify admin.
             </p>
 
             <p>
-              <strong style={{ color: '#a1a1aa' }}>3.</strong> Add the CipherPay payment button to your Thank You page:
+              <strong style={{ color: '#a1a1aa' }}>3.</strong> Search for <strong style={{ color: '#00D4FF' }}>CipherPay</strong> and click <strong style={{ color: '#a1a1aa' }}>Activate</strong>.
             </p>
-            <div style={{ fontSize: 11, color: '#52525b', paddingLeft: 16, marginBottom: 12 }}>
-              <p style={{ marginTop: 4, marginBottom: 4 }}>
-                Go to <strong style={{ color: '#a1a1aa' }}>Settings → Checkout → Customize</strong>
-              </p>
-              <p style={{ marginTop: 4, marginBottom: 4 }}>
-                Switch to the <strong style={{ color: '#a1a1aa' }}>Thank you</strong> page (top dropdown)
-              </p>
-              <p style={{ marginTop: 4, marginBottom: 4 }}>
-                Click the <strong style={{ color: '#a1a1aa' }}>Apps</strong> icon on the left panel
-              </p>
-              <p style={{ marginTop: 4, marginBottom: 4 }}>
-                Click <strong style={{ color: '#a1a1aa' }}>+</strong> next to <strong style={{ color: '#00D4FF' }}>CipherPay Checkout</strong>
-              </p>
-              <p style={{ marginTop: 4, marginBottom: 4 }}>
-                Click <strong style={{ color: '#a1a1aa' }}>Save</strong>
-              </p>
-            </div>
 
             <p>
-              <strong style={{ color: '#a1a1aa' }}>4.</strong> When a customer checks out with &quot;Pay with Zcash,&quot; a <strong style={{ color: '#22c55e' }}>&quot;Pay with Zcash&quot; button</strong> appears on the Thank You page. The customer clicks it to complete payment.
+              <strong style={{ color: '#a1a1aa' }}>4.</strong> Zcash (ZEC) will appear as a native payment option in your checkout, with a logo and redirect flow.
             </p>
 
             <p style={{ marginBottom: 0 }}>
-              <strong style={{ color: '#a1a1aa' }}>5.</strong> Place a test order to verify the payment flow.
+              <strong style={{ color: '#a1a1aa' }}>5.</strong> Place a test order to verify. Customers select Zcash at checkout and are redirected to CipherPay to complete payment.
+            </p>
+          </div>
+
+          <div style={{ marginTop: 24, paddingTop: 16, borderTop: '1px solid #1a1a1e' }}>
+            <p style={{ fontSize: 10, color: '#3f3f46', margin: 0, lineHeight: 1.6 }}>
+              Legacy: If you previously used the manual payment method (&quot;Pay with Zcash&quot;), it will continue to work alongside the native payments extension. You can remove the manual method after activating CipherPay as an additional payment method.
             </p>
           </div>
         </div>

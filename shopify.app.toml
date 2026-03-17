@@ -10,4 +10,9 @@ scopes = "read_orders,write_orders"
 redirect_urls = ["https://shopify.cipherpay.app/api/auth/callback"]
 
 [webhooks]
-api_version = "2024-10"
+api_version = "2026-01"
+
+[webhooks.privacy_compliance]
+customer_data_request_url = "https://shopify.cipherpay.app/api/webhook/shopify/compliance"
+customer_deletion_url = "https://shopify.cipherpay.app/api/webhook/shopify/compliance"
+shop_deletion_url = "https://shopify.cipherpay.app/api/webhook/shopify/compliance"
