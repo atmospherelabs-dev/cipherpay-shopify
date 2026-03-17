@@ -30,7 +30,7 @@ Funds go directly to the merchant's Zcash wallet. CipherPay never holds funds.
 Visit the install page and enter your Shopify store URL:
 
 ```
-https://shopify.cipherpay.app
+https://connect.cipherpay.app
 ```
 
 Authorize the app when prompted.
@@ -58,7 +58,7 @@ After installation, you'll be redirected to the settings page. Enter:
 3. Paste the following script tag:
 
 ```html
-<script src="https://shopify.cipherpay.app/checkout.js" data-shop="YOUR-STORE.myshopify.com"></script>
+<script src="https://connect.cipherpay.app/checkout.js" data-shop="YOUR-STORE.myshopify.com"></script>
 ```
 
 Replace `YOUR-STORE.myshopify.com` with your actual Shopify domain.
@@ -68,7 +68,7 @@ Replace `YOUR-STORE.myshopify.com` with your actual Shopify domain.
 In your CipherPay dashboard → Settings → Webhook URL, set:
 
 ```
-https://shopify.cipherpay.app/api/webhook/cipherpay
+https://connect.cipherpay.app/api/webhook/cipherpay
 ```
 
 ### Step 6: Test

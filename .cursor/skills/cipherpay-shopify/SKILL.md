@@ -146,7 +146,7 @@ Customer at checkout
 |----------|-------------|
 | `SHOPIFY_API_KEY` | Shopify app API key |
 | `SHOPIFY_API_SECRET` | Shopify app secret (HMAC verification) |
-| `HOST` | App URL (https://shopify.cipherpay.app) |
+| `HOST` | App URL (https://connect.cipherpay.app) |
 | `UPSTASH_REDIS_REST_URL` | Redis connection |
 | `UPSTASH_REDIS_REST_TOKEN` | Redis auth token |
 

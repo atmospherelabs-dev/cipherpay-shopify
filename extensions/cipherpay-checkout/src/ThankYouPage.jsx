@@ -3,7 +3,7 @@ import "@shopify/ui-extensions/preact";
 import { render } from "preact";
 import { useState, useEffect } from "preact/hooks";
 
-const API_BASE = "https://shopify.cipherpay.app";
+const API_BASE = "https://connect.cipherpay.app";
 const LOGO_URL = "https://cipherpay.app/logo-mark.png";
 
 function normalizeId(id) {

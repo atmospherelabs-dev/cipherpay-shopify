@@ -1,18 +1,18 @@
 name = "CipherPay"
 client_id = "296fbfdb946de04bd188148d3984d625"
-application_url = "https://shopify.cipherpay.app"
+application_url = "https://connect.cipherpay.app"
 embedded = false
 
 [access_scopes]
 scopes = "read_orders,write_orders"
 
 [auth]
-redirect_urls = ["https://shopify.cipherpay.app/api/auth/callback"]
+redirect_urls = ["https://connect.cipherpay.app/api/auth/callback"]
 
 [webhooks]
 api_version = "2026-01"
 
 [webhooks.privacy_compliance]
-customer_data_request_url = "https://shopify.cipherpay.app/api/webhook/shopify/compliance"
-customer_deletion_url = "https://shopify.cipherpay.app/api/webhook/shopify/compliance"
-shop_deletion_url = "https://shopify.cipherpay.app/api/webhook/shopify/compliance"
+customer_data_request_url = "https://connect.cipherpay.app/api/webhook/shopify/compliance"
+customer_deletion_url = "https://connect.cipherpay.app/api/webhook/shopify/compliance"
+shop_deletion_url = "https://connect.cipherpay.app/api/webhook/shopify/compliance"
