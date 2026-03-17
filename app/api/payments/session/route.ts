@@ -62,7 +62,7 @@ export async function POST(req: NextRequest) {
       const checkoutDomain = shopData.cipherpay_api_url.includes('testnet')
         ? 'https://testnet.cipherpay.app'
         : 'https://cipherpay.app';
-      const host = process.env.HOST || 'https://shopify.cipherpay.app';
+      const host = process.env.HOST || 'https://connect.cipherpay.app';
       const returnUrl = `${host}/api/payments/return?sid=${encodeURIComponent(body.id)}`;
       const redirectUrl = `${checkoutDomain}/pay/${existing.cipherpay_invoice_id}?theme=dark&return_url=${encodeURIComponent(returnUrl)}`;
 
@@ -119,7 +119,7 @@ export async function POST(req: NextRequest) {
       ? 'https://testnet.cipherpay.app'
       : 'https://cipherpay.app';
 
-    const host = process.env.HOST || 'https://shopify.cipherpay.app';
+    const host = process.env.HOST || 'https://connect.cipherpay.app';
     const returnUrl = `${host}/api/payments/return?sid=${encodeURIComponent(body.id)}`;
     const redirectUrl = `${checkoutDomain}/pay/${invoice.id}?theme=dark&return_url=${encodeURIComponent(returnUrl)}`;
 

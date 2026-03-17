@@ -98,7 +98,7 @@ export async function registerWebhooks(
   shop: string,
   accessToken: string,
 ): Promise<void> {
-  const host = process.env.HOST || 'https://shopify.cipherpay.app';
+  const host = process.env.HOST || 'https://connect.cipherpay.app';
   const complianceUrl = `${host}/api/webhook/shopify/compliance`;
   const topics = [
     { topic: 'orders/create', address: `${host}/api/webhook/shopify/orders` },
