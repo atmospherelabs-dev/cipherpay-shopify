@@ -188,3 +188,16 @@ export async function updateShopifyPaymentSession(
 
   await redis.set(spSessionKey(id), JSON.stringify(session), { ex: 86400 });
 }
+
+// --- Session Tokens (post-OAuth settings auth) ---
+
+function sessionTokenKey(shop: string, token: string) { return `st:${shop}:${token}`; }
+
+export async function saveSessionToken(shop: string, token: string): Promise<void> {
+  await redis.set(sessionTokenKey(shop, token), '1', { ex: 3600 });
+}
+
+export async function verifySessionToken(shop: string, token: string): Promise<boolean> {
+  const val = await redis.get(sessionTokenKey(shop, token));
+  return val === '1';
+}

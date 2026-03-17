@@ -37,10 +37,19 @@ async function authenticateShop(req: NextRequest): Promise<boolean> {
   const hmac = req.nextUrl.searchParams.get('hmac')
     || req.headers.get('x-shopify-hmac');
 
-  if (!hmac) return false;
+  if (hmac) {
+    const params = Object.fromEntries(req.nextUrl.searchParams.entries());
+    return verifyHmac(params);
+  }
 
-  const params = Object.fromEntries(req.nextUrl.searchParams.entries());
-  return verifyHmac(params);
+  const sessionToken = req.nextUrl.searchParams.get('session_token');
+  const shop = req.nextUrl.searchParams.get('shop');
+  if (sessionToken && shop) {
+    const { verifySessionToken } = await import('@/lib/db');
+    return verifySessionToken(shop, sessionToken);
+  }
+
+  return false;
 }
 
 export async function GET(req: NextRequest) {
