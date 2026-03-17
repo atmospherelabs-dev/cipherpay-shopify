@@ -196,10 +196,16 @@ export async function updateShopifyPaymentSession(
 function sessionTokenKey(shop: string, token: string) { return `st:${shop}:${token}`; }
 
 export async function saveSessionToken(shop: string, token: string): Promise<void> {
-  await redis.set(sessionTokenKey(shop, token), '1', { ex: 3600 });
+  const key = sessionTokenKey(shop, token);
+  console.log('[db] Saving session token:', key);
+  await redis.set(key, '1', { ex: 3600 });
+  const verify = await redis.get(key);
+  console.log('[db] Verify after save:', verify);
 }
 
 export async function verifySessionToken(shop: string, token: string): Promise<boolean> {
-  const val = await redis.get(sessionTokenKey(shop, token));
-  return val === '1';
+  const key = sessionTokenKey(shop, token);
+  const val = await redis.get(key);
+  console.log('[db] verifySessionToken key:', key, 'val:', val, 'type:', typeof val);
+  return val === '1' || val === 1;
 }
