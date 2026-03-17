@@ -68,15 +68,23 @@ export async function POST(req: NextRequest) {
 
     const existingSession = await getPaymentSessionByOrderId(shopDomain, order.id.toString());
     if (existingSession?.cipherpay_invoice_id) {
-      console.log('orders/create webhook: session already exists, skipping invoice creation', {
+      console.log('orders/create webhook: session already exists, tagging order', {
         shopDomain, orderId: order.id, invoiceId: existingSession.cipherpay_invoice_id,
       });
+      try {
+        await shopifyAdminApi(shopDomain, shopData.access_token, `orders/${order.id}.json`, {
+          method: 'PUT',
+          body: { order: { id: order.id, tags: `cipherpay,${existingSession.cipherpay_invoice_id}` } },
+        });
+      } catch (err) {
+        console.error('Failed to tag order (existing session):', err);
+      }
       return NextResponse.json({ ok: true, invoice_id: existingSession.cipherpay_invoice_id, skipped: 'already exists' });
     }
 
     const lockAcquired = await acquireOrderLock(shopDomain, order.id.toString());
     if (!lockAcquired) {
-      console.log('orders/create webhook: lock held by extension, skipping', { shopDomain, orderId: order.id });
+      console.log('orders/create webhook: lock held by extension, will tag later via retry', { shopDomain, orderId: order.id });
       return NextResponse.json({ ok: true, skipped: 'lock held' });
     }
 
