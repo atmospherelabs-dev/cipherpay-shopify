@@ -39,20 +39,14 @@ async function authenticateShop(req: NextRequest): Promise<boolean> {
 
   if (hmac) {
     const params = Object.fromEntries(req.nextUrl.searchParams.entries());
-    const valid = verifyHmac(params);
-    console.log('[settings auth] HMAC verification:', valid);
-    return valid;
+    return verifyHmac(params);
   }
 
   const sessionToken = req.nextUrl.searchParams.get('session_token');
   const shop = req.nextUrl.searchParams.get('shop');
-  console.log('[settings auth] No HMAC. session_token:', sessionToken ? 'present' : 'missing', 'shop:', shop);
-
   if (sessionToken && shop) {
     const { verifySessionToken } = await import('@/lib/db');
-    const valid = await verifySessionToken(shop, sessionToken);
-    console.log('[settings auth] Session token verification:', valid, 'token:', sessionToken.slice(0, 8) + '...');
-    return valid;
+    return verifySessionToken(shop, sessionToken);
   }
 
   return false;
