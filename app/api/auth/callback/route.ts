@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import crypto from 'crypto';
 import { verifyHmac, exchangeCodeForToken, registerWebhooks } from '@/lib/shopify';
 import { saveShop } from '@/lib/db';
 
@@ -29,8 +30,12 @@ export async function GET(req: NextRequest) {
       console.error('Webhook registration failed (non-blocking):', err);
     }
 
+    const { saveSessionToken } = await import('@/lib/db');
+    const sessionToken = crypto.randomUUID();
+    await saveSessionToken(shop, sessionToken);
+
     const host = process.env.HOST || req.nextUrl.origin;
-    const redirectUrl = `${host}/settings?shop=${encodeURIComponent(shop)}`;
+    const redirectUrl = `${host}/settings?shop=${encodeURIComponent(shop)}&session_token=${sessionToken}`;
 
     const response = NextResponse.redirect(redirectUrl);
     response.cookies.delete('shopify_oauth_state');
