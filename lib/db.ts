@@ -198,14 +198,14 @@ function sessionTokenKey(shop: string, token: string) { return `st:${shop}:${tok
 export async function saveSessionToken(shop: string, token: string): Promise<void> {
   const key = sessionTokenKey(shop, token);
   console.log('[db] Saving session token:', key);
-  await redis.set(key, '1', { ex: 3600 });
+  await redis.set(key, 'valid', { ex: 3600 });
   const verify = await redis.get(key);
-  console.log('[db] Verify after save:', verify);
+  console.log('[db] Verify after save:', verify, typeof verify);
 }
 
 export async function verifySessionToken(shop: string, token: string): Promise<boolean> {
   const key = sessionTokenKey(shop, token);
   const val = await redis.get(key);
   console.log('[db] verifySessionToken key:', key, 'val:', val, 'type:', typeof val);
-  return val === '1' || val === 1;
+  return val === 'valid' || val === '1' || val === 1;
 }
