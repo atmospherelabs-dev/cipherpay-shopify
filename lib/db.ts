@@ -134,3 +134,57 @@ export async function acquireOrderLock(shop: string, orderId: string): Promise<b
   const result = await redis.set(orderLockKey(shop, orderId), '1', { nx: true, ex: 30 });
   return result === 'OK';
 }
+
+// --- Shopify Payments Extension Sessions ---
+
+export interface ShopifyPaymentSession {
+  id: string;
+  gid: string;
+  group: string;
+  shop: string;
+  amount: string;
+  currency: string;
+  test: boolean;
+  kind: string;
+  cancel_url: string;
+  cipherpay_invoice_id: string | null;
+  status: 'pending' | 'resolved' | 'rejected';
+}
+
+function spSessionKey(id: string) { return `sps:${id}`; }
+function spInvoiceMapKey(invoiceId: string) { return `sps-inv:${invoiceId}`; }
+
+export async function saveShopifyPaymentSession(session: ShopifyPaymentSession): Promise<void> {
+  await redis.set(spSessionKey(session.id), JSON.stringify(session), { ex: 86400 });
+  if (session.cipherpay_invoice_id) {
+    await redis.set(spInvoiceMapKey(session.cipherpay_invoice_id), session.id, { ex: 86400 });
+  }
+}
+
+export async function getShopifyPaymentSession(id: string): Promise<ShopifyPaymentSession | null> {
+  const data = await redis.get<string>(spSessionKey(id));
+  if (!data) return null;
+  return typeof data === 'string' ? JSON.parse(data) : data as unknown as ShopifyPaymentSession;
+}
+
+export async function getShopifyPaymentSessionByInvoiceId(invoiceId: string): Promise<ShopifyPaymentSession | null> {
+  const sessionId = await redis.get<string>(spInvoiceMapKey(invoiceId));
+  if (!sessionId) return null;
+  return getShopifyPaymentSession(typeof sessionId === 'string' ? sessionId : String(sessionId));
+}
+
+export async function updateShopifyPaymentSession(
+  id: string,
+  updates: Partial<Pick<ShopifyPaymentSession, 'cipherpay_invoice_id' | 'status'>>
+): Promise<void> {
+  const session = await getShopifyPaymentSession(id);
+  if (!session) return;
+
+  if (updates.cipherpay_invoice_id !== undefined) {
+    session.cipherpay_invoice_id = updates.cipherpay_invoice_id;
+    await redis.set(spInvoiceMapKey(updates.cipherpay_invoice_id), id, { ex: 86400 });
+  }
+  if (updates.status !== undefined) session.status = updates.status;
+
+  await redis.set(spSessionKey(id), JSON.stringify(session), { ex: 86400 });
+}

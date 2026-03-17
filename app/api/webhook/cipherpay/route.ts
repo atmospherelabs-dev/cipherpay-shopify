@@ -1,7 +1,37 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { verifyCipherPayWebhook } from '@/lib/cipherpay';
-import { getPaymentSessionByInvoiceId, updatePaymentSession, getShop } from '@/lib/db';
+import {
+  getPaymentSessionByInvoiceId,
+  updatePaymentSession,
+  getShop,
+  getShopifyPaymentSessionByInvoiceId,
+  updateShopifyPaymentSession,
+} from '@/lib/db';
 import { markOrderAsPaid } from '@/lib/shopify';
+import { paymentSessionResolve, paymentSessionReject } from '@/lib/shopify-payments';
+
+async function resolveShopifyPaymentExtension(invoiceId: string, event: string): Promise<void> {
+  const spSession = await getShopifyPaymentSessionByInvoiceId(invoiceId);
+  if (!spSession || spSession.status !== 'pending') return;
+
+  const shopData = await getShop(spSession.shop);
+  if (!shopData?.access_token) return;
+
+  if (event === 'confirmed') {
+    await paymentSessionResolve(spSession.shop, shopData.access_token, spSession.gid);
+    await updateShopifyPaymentSession(spSession.id, { status: 'resolved' });
+    console.log(`Shopify payment session ${spSession.id} resolved for ${spSession.shop}`);
+  } else if (event === 'expired' || event === 'cancelled') {
+    await paymentSessionReject(
+      spSession.shop,
+      shopData.access_token,
+      spSession.gid,
+      event === 'expired' ? 'Payment expired' : 'Payment cancelled'
+    );
+    await updateShopifyPaymentSession(spSession.id, { status: 'rejected' });
+    console.log(`Shopify payment session ${spSession.id} rejected (${event}) for ${spSession.shop}`);
+  }
+}
 
 export async function POST(req: NextRequest) {
   try {
@@ -17,19 +47,32 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Missing invoice_id' }, { status: 400 });
     }
 
+    // Try legacy payment session first (manual payment method flow)
     const session = await getPaymentSessionByInvoiceId(invoiceId);
+
+    // Determine which shop to use for webhook verification
+    const shopDomain = session?.shop;
+    let shopData = shopDomain ? await getShop(shopDomain) : null;
+
+    // If no legacy session, check for a Payments Extension session
     if (!session) {
-      console.warn(`No payment session found for invoice ${invoiceId}`);
-      return NextResponse.json({ ok: true });
+      const spSession = await getShopifyPaymentSessionByInvoiceId(invoiceId);
+      if (spSession) {
+        shopData = await getShop(spSession.shop);
+      }
+
+      if (!spSession && !shopData) {
+        console.warn(`No payment session found for invoice ${invoiceId}`);
+        return NextResponse.json({ ok: true });
+      }
     }
 
-    const shopData = await getShop(session.shop);
     if (!shopData) {
       return NextResponse.json({ error: 'Shop not found' }, { status: 404 });
     }
 
     if (!shopData.cipherpay_webhook_secret) {
-      console.error('CipherPay webhook rejected: no webhook secret configured for', session.shop);
+      console.error('CipherPay webhook rejected: no webhook secret configured for', shopData.shop);
       return NextResponse.json({ error: 'Webhook secret not configured' }, { status: 403 });
     }
 
@@ -50,21 +93,30 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Timestamp expired' }, { status: 401 });
     }
 
-    if (event === 'confirmed') {
-      await updatePaymentSession(session.id, { status: 'confirmed' });
-
-      if (session.shopify_order_id && shopData.access_token) {
-        try {
-          await markOrderAsPaid(session.shop, shopData.access_token, session.shopify_order_id);
-          console.log(`Order ${session.shopify_order_id} marked as paid on ${session.shop}`);
-        } catch (err) {
-          console.error('Failed to mark order as paid on Shopify:', err);
+    // Handle legacy manual payment method sessions
+    if (session) {
+      if (event === 'confirmed') {
+        await updatePaymentSession(session.id, { status: 'confirmed' });
+        if (session.shopify_order_id && shopData.access_token) {
+          try {
+            await markOrderAsPaid(session.shop, shopData.access_token, session.shopify_order_id);
+            console.log(`Order ${session.shopify_order_id} marked as paid on ${session.shop}`);
+          } catch (err) {
+            console.error('Failed to mark order as paid on Shopify:', err);
+          }
         }
+      } else if (event === 'detected') {
+        await updatePaymentSession(session.id, { status: 'detected' });
+      } else if (event === 'expired' || event === 'cancelled') {
+        await updatePaymentSession(session.id, { status: event });
       }
-    } else if (event === 'detected') {
-      await updatePaymentSession(session.id, { status: 'detected' });
-    } else if (event === 'expired' || event === 'cancelled') {
-      await updatePaymentSession(session.id, { status: event });
+    }
+
+    // Handle Payments Extension sessions
+    try {
+      await resolveShopifyPaymentExtension(invoiceId, event);
+    } catch (err) {
+      console.error('Failed to resolve Shopify payment extension session:', err);
     }
 
     return NextResponse.json({ ok: true });

@@ -1,0 +1,29 @@
+api_version = "2026-01"
+
+[[extensions]]
+type = "payments_app_extension_offsite"
+name = "CipherPay — Zcash"
+handle = "cipherpay-payments"
+
+payment_session_url = "/api/payments/session"
+refund_session_url = "/api/payments/refund"
+capture_session_url = "/api/payments/capture"
+void_session_url = "/api/payments/void"
+
+supported_countries = [
+  "US", "CA", "GB", "AU", "DE", "FR", "NL", "ES", "IT", "PT",
+  "BR", "MX", "JP", "KR", "SG", "HK", "NZ", "SE", "NO", "DK",
+  "FI", "CH", "AT", "BE", "IE", "ZA", "IL", "AE", "IN", "PH",
+  "CO", "CL", "AR", "PE", "NG", "GH", "KE", "TZ", "CZ", "PL",
+  "RO", "HR", "BG", "HU", "SK", "SI", "LT", "LV", "EE", "CY",
+  "MT", "LU", "IS", "MY", "TH", "VN", "ID", "TR",
+]
+
+supported_payment_methods = ["zcash"]
+supports_3ds = false
+supports_installments = false
+supports_deferred_payments = false
+test_mode_available = true
+
+merchant_label = "CipherPay — Zcash (ZEC)"
+buyer_label = "Zcash (ZEC)"

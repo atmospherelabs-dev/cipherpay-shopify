@@ -57,7 +57,7 @@ export async function shopifyAdminApi(
   endpoint: string,
   options: { method?: string; body?: unknown } = {}
 ) {
-  const res = await fetch(`https://${shop}/admin/api/2024-10/${endpoint}`, {
+  const res = await fetch(`https://${shop}/admin/api/2026-01/${endpoint}`, {
     method: options.method || 'GET',
     headers: {
       'Content-Type': 'application/json',
@@ -99,9 +99,13 @@ export async function registerWebhooks(
   accessToken: string,
 ): Promise<void> {
   const host = process.env.HOST || 'https://shopify.cipherpay.app';
+  const complianceUrl = `${host}/api/webhook/shopify/compliance`;
   const topics = [
     { topic: 'orders/create', address: `${host}/api/webhook/shopify/orders` },
     { topic: 'app/uninstalled', address: `${host}/api/webhook/shopify` },
+    { topic: 'customers/data_request', address: complianceUrl },
+    { topic: 'customers/redact', address: complianceUrl },
+    { topic: 'shop/redact', address: complianceUrl },
   ];
 
   const existing = await shopifyAdminApi(shop, accessToken, 'webhooks.json');
