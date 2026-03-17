@@ -182,7 +182,9 @@ export async function updateShopifyPaymentSession(
 
   if (updates.cipherpay_invoice_id !== undefined) {
     session.cipherpay_invoice_id = updates.cipherpay_invoice_id;
-    await redis.set(spInvoiceMapKey(updates.cipherpay_invoice_id), id, { ex: 86400 });
+    if (updates.cipherpay_invoice_id) {
+      await redis.set(spInvoiceMapKey(updates.cipherpay_invoice_id), id, { ex: 86400 });
+    }
   }
   if (updates.status !== undefined) session.status = updates.status;
 
