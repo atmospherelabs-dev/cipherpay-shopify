@@ -103,13 +103,17 @@ export async function POST(req: NextRequest) {
     });
 
     // Tell Shopify the payment is pending (async crypto confirmation).
-    // Pending expires when the CipherPay invoice expires.
+    // Add a 15-minute buffer beyond CipherPay's invoice expiry to cover
+    // block confirmation time after mempool detection.
+    const shopifyPendingExpiry = new Date(
+      new Date(invoice.expires_at).getTime() + 15 * 60 * 1000
+    ).toISOString();
     try {
       await paymentSessionPending(
         shopDomain,
         shopData.access_token,
         body.gid,
-        invoice.expires_at
+        shopifyPendingExpiry
       );
     } catch (err) {
       console.error('payments/session: paymentSessionPending failed (non-blocking)', err);
