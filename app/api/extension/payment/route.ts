@@ -2,13 +2,14 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getShop, getPaymentSessionByOrderId, createPaymentSession, acquireOrderLock } from '@/lib/db';
 import { createInvoice } from '@/lib/cipherpay';
 import { shopifyAdminApi } from '@/lib/shopify';
+import { verifyShopifySessionToken } from '@/lib/verify-session-token';
 import crypto from 'crypto';
 
 function corsHeaders() {
   return {
     'Access-Control-Allow-Origin': '*',
     'Access-Control-Allow-Methods': 'POST, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization',
   };
 }
 
@@ -22,8 +23,31 @@ function normalizeOrderId(id: string): string {
 
 export async function POST(req: NextRequest) {
   try {
+    // Verify Shopify App Bridge session token
+    const authHeader = req.headers.get('Authorization');
+    const sessionToken = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null;
+
+    let verifiedShop: string | null = null;
+    if (sessionToken) {
+      try {
+        verifiedShop = await verifyShopifySessionToken(sessionToken);
+      } catch (err) {
+        console.error('extension/payment: invalid session token', err);
+        return NextResponse.json(
+          { error: 'Invalid session token' },
+          { status: 401, headers: corsHeaders() }
+        );
+      }
+    } else {
+      console.warn('extension/payment: no session token provided');
+      return NextResponse.json(
+        { error: 'Authorization required' },
+        { status: 401, headers: corsHeaders() }
+      );
+    }
+
     const body = await req.json();
-    const shop = body.shop;
+    const shop = verifiedShop;
     const order_id = normalizeOrderId(body.order_id || '');
     console.log('extension/payment: request received', { shop, order_id });
 
@@ -31,13 +55,6 @@ export async function POST(req: NextRequest) {
       console.log('extension/payment: missing params', { shop, order_id });
       return NextResponse.json(
         { error: 'Missing shop or order_id' },
-        { status: 400, headers: corsHeaders() }
-      );
-    }
-
-    if (!shop.match(/^[a-zA-Z0-9][a-zA-Z0-9-]*\.myshopify\.com$/)) {
-      return NextResponse.json(
-        { error: 'Invalid shop domain' },
         { status: 400, headers: corsHeaders() }
       );
     }

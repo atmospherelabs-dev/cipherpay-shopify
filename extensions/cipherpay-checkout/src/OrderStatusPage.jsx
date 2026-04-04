@@ -32,11 +32,14 @@ function CipherPayOrderStatus() {
 
     async function fetchPayment() {
       try {
+        const token = await shopify.idToken();
         const res = await fetch(`${API_BASE}/api/extension/payment`, {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${token}`,
+          },
           body: JSON.stringify({
-            shop: shopDomain,
             order_id: orderId,
           }),
         });
