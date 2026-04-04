@@ -1,6 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getShopifyPaymentSession } from '@/lib/db';
 
+function escapeHtml(str: string): string {
+  return str
+    .replace(/&/g, '&amp;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+}
+
 /**
  * Customer return endpoint after paying on CipherPay checkout.
  * Waits for payment confirmation, then redirects back to Shopify.
@@ -93,7 +102,7 @@ export async function GET(req: NextRequest) {
       Confirming your <span class="accent">Zcash</span> payment.
       You'll be redirected back to the store momentarily.
     </p>
-    <a href="${session.cancel_url}">Return to checkout</a>
+    <a href="${escapeHtml(session.cancel_url)}">Return to checkout</a>
   </div>
 </body>
 </html>`;
