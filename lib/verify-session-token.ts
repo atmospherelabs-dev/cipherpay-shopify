@@ -1,4 +1,4 @@
-import { jwtVerify, createSecretKey } from 'jose';
+import { jwtVerify } from 'jose';
 
 const SHOPIFY_API_KEY = process.env.SHOPIFY_API_KEY!;
 const SHOPIFY_API_SECRET = process.env.SHOPIFY_API_SECRET!;
@@ -19,7 +19,7 @@ interface ShopifySessionPayload {
  * Throws on invalid/expired tokens.
  */
 export async function verifyShopifySessionToken(token: string): Promise<string> {
-  const secret = createSecretKey(Buffer.from(SHOPIFY_API_SECRET, 'utf-8'));
+  const secret = new TextEncoder().encode(SHOPIFY_API_SECRET);
 
   const { payload } = await jwtVerify(token, secret, {
     algorithms: ['HS256'],
