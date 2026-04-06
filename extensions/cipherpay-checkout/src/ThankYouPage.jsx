@@ -110,11 +110,11 @@ function CipherPayThankYou() {
           setStatus(data.status);
         }
       } catch (_) {}
-      if (!cancelled) pollTimer = setTimeout(pollStatus, 5000);
+      if (!cancelled) pollTimer = setTimeout(pollStatus, 10000);
     }
 
     fetchPayment().then(() => {
-      if (!cancelled) pollTimer = setTimeout(pollStatus, 5000);
+      if (!cancelled) pollTimer = setTimeout(pollStatus, 10000);
     });
 
     return () => { cancelled = true; clearTimeout(pollTimer); };
