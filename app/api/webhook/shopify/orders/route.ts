@@ -142,7 +142,9 @@ export async function POST(req: NextRequest) {
     const checkoutDomain = shopData.cipherpay_api_url.includes('testnet')
       ? 'https://testnet.cipherpay.app'
       : 'https://cipherpay.app';
-    const payUrl = `${checkoutDomain}/pay/${invoice.id}?theme=dark`;
+    const orderStatusUrl = order.order_status_url || '';
+    const returnParam = orderStatusUrl ? `&return_url=${encodeURIComponent(orderStatusUrl)}` : '';
+    const payUrl = `${checkoutDomain}/pay/${invoice.id}?theme=dark${returnParam}`;
     const orderNote = `Pay with Zcash: ${payUrl}`;
     console.log('orders/create webhook: updating Shopify order', {
       shopDomain,
