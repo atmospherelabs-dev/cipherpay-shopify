@@ -57,14 +57,16 @@ function CipherPayThankYou() {
 
     async function fetchPayment() {
       try {
-        const token = await shopify.idToken();
+        let token = null;
+        try { token = await shopify.idToken(); } catch (_) {}
+
+        const headers = { "Content-Type": "application/json" };
+        if (token) headers["Authorization"] = `Bearer ${token}`;
+
         const res = await fetch(`${API_BASE}/api/extension/payment`, {
           method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "Authorization": `Bearer ${token}`,
-          },
-          body: JSON.stringify({ order_id: orderId, session_token: token }),
+          headers,
+          body: JSON.stringify({ shop, order_id: orderId, session_token: token }),
         });
         const data = await res.json();
 

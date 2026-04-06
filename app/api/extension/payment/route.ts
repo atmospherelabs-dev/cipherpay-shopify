@@ -25,8 +25,7 @@ export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
 
-    // Accept session token from Authorization header or request body (fallback
-    // for Shopify's checkout proxy which may strip the Authorization header)
+    // Try JWT from header or body; fall back to shop domain validation
     const authHeader = req.headers.get('Authorization');
     const sessionToken = (authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null)
       || body.session_token
@@ -37,14 +36,19 @@ export async function POST(req: NextRequest) {
       try {
         verifiedShop = await verifyShopifySessionToken(sessionToken);
       } catch (err) {
-        console.error('extension/payment: invalid session token', err);
-        return NextResponse.json(
-          { error: 'Invalid session token' },
-          { status: 401, headers: corsHeaders() }
-        );
+        console.warn('extension/payment: JWT failed, trying shop fallback', err);
       }
-    } else {
-      console.warn('extension/payment: no session token provided');
+    }
+
+    if (!verifiedShop && body.shop) {
+      const fallbackShop = await getShop(body.shop);
+      if (fallbackShop?.cipherpay_api_key) {
+        verifiedShop = body.shop;
+      }
+    }
+
+    if (!verifiedShop) {
+      console.warn('extension/payment: no valid authentication');
       return NextResponse.json(
         { error: 'Authorization required' },
         { status: 401, headers: corsHeaders() }
