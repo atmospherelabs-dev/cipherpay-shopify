@@ -23,9 +23,14 @@ function normalizeOrderId(id: string): string {
 
 export async function POST(req: NextRequest) {
   try {
-    // Verify Shopify App Bridge session token
+    const body = await req.json();
+
+    // Accept session token from Authorization header or request body (fallback
+    // for Shopify's checkout proxy which may strip the Authorization header)
     const authHeader = req.headers.get('Authorization');
-    const sessionToken = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null;
+    const sessionToken = (authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null)
+      || body.session_token
+      || null;
 
     let verifiedShop: string | null = null;
     if (sessionToken) {
@@ -45,8 +50,6 @@ export async function POST(req: NextRequest) {
         { status: 401, headers: corsHeaders() }
       );
     }
-
-    const body = await req.json();
     const shop = verifiedShop;
     const order_id = normalizeOrderId(body.order_id || '');
     console.log('extension/payment: request received', { shop, order_id });

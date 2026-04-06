@@ -99,13 +99,10 @@ export async function registerWebhooks(
   accessToken: string,
 ): Promise<void> {
   const host = process.env.HOST || 'https://connect.cipherpay.app';
-  const complianceUrl = `${host}/api/webhook/shopify/compliance`;
+  // GDPR compliance webhooks are now declared in shopify.app.toml
   const topics = [
     { topic: 'orders/create', address: `${host}/api/webhook/shopify/orders` },
     { topic: 'app/uninstalled', address: `${host}/api/webhook/shopify` },
-    { topic: 'customers/data_request', address: complianceUrl },
-    { topic: 'customers/redact', address: complianceUrl },
-    { topic: 'shop/redact', address: complianceUrl },
   ];
 
   const existing = await shopifyAdminApi(shop, accessToken, 'webhooks.json');
