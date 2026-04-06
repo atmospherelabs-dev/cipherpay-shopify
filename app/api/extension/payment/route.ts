@@ -82,7 +82,26 @@ export async function POST(req: NextRequest) {
     const existing = await getPaymentSessionByOrderId(shop, order_id);
     console.log('extension/payment: session lookup', { shop, order_id, found: Boolean(existing), invoiceId: existing?.cipherpay_invoice_id });
 
-    // Fetch order data (needed for both existing session redirect and new invoice creation)
+    // For existing sessions (polling), return immediately without hitting Shopify API
+    if (existing?.cipherpay_invoice_id) {
+      const payUrl = `${checkoutDomain}/pay/${existing.cipherpay_invoice_id}?theme=dark`;
+      return NextResponse.json(
+        {
+          payment_url: payUrl,
+          invoice_id: existing.cipherpay_invoice_id,
+          status: existing.status,
+        },
+        { headers: corsHeaders() }
+      );
+    }
+
+    // No session yet — fetch order from Shopify to create invoice
+    const lockAcquired = await acquireOrderLock(shop, order_id);
+    if (!lockAcquired) {
+      console.log('extension/payment: lock held by another process, retrying', { shop, order_id });
+      return NextResponse.json({ pending: true }, { status: 200, headers: corsHeaders() });
+    }
+
     let orderData: { total_price: string; currency: string; gateway?: string; payment_gateway_names?: string[]; line_items?: Array<{ title: string }>; order_status_url?: string } | null = null;
     try {
       const res = await shopifyAdminApi(shop, shopData.access_token, `orders/${order_id}.json`);
@@ -91,33 +110,13 @@ export async function POST(req: NextRequest) {
       console.warn('extension/payment: could not fetch order', { shop, order_id, err });
     }
 
-    const orderStatusUrl = orderData?.order_status_url || '';
-    const returnParam = orderStatusUrl ? `&return_url=${encodeURIComponent(orderStatusUrl)}` : '';
-    console.log('extension/payment: redirect info', { shop, order_id, orderStatusUrl: orderStatusUrl || '(empty)', hasReturnParam: !!returnParam });
-
-    if (existing?.cipherpay_invoice_id) {
-      console.log('extension/payment: returning existing session', { invoiceId: existing.cipherpay_invoice_id });
-      return NextResponse.json(
-        {
-          payment_url: `${checkoutDomain}/pay/${existing.cipherpay_invoice_id}?theme=dark${returnParam}`,
-          invoice_id: existing.cipherpay_invoice_id,
-          status: existing.status,
-        },
-        { headers: corsHeaders() }
-      );
-    }
-
-    // No session yet — try to create the invoice (with atomic lock to prevent duplicates)
-    const lockAcquired = await acquireOrderLock(shop, order_id);
-    if (!lockAcquired) {
-      console.log('extension/payment: lock held by another process, retrying', { shop, order_id });
-      return NextResponse.json({ pending: true }, { status: 200, headers: corsHeaders() });
-    }
-
     if (!orderData) {
       console.error('extension/payment: no order data available', { shop, order_id });
       return NextResponse.json({ pending: true }, { status: 200, headers: corsHeaders() });
     }
+
+    const orderStatusUrl = orderData.order_status_url || `https://${shop}`;
+    console.log('extension/payment: redirect info', { shop, order_id, orderStatusUrl });
 
     const gateway = (orderData.gateway || '').toLowerCase();
     const paymentMethod = (orderData.payment_gateway_names || []).join(' ').toLowerCase();
@@ -151,8 +150,9 @@ export async function POST(req: NextRequest) {
       currency,
     });
 
+    const returnParam = orderStatusUrl ? `&return_url=${encodeURIComponent(orderStatusUrl)}` : '';
     const payUrl = `${checkoutDomain}/pay/${invoice.id}?theme=dark${returnParam}`;
-    console.log('extension/payment: invoice created', { shop, order_id, invoiceId: invoice.id });
+    console.log('extension/payment: invoice created', { shop, order_id, invoiceId: invoice.id, orderStatusUrl: orderStatusUrl || '(empty)' });
 
     return NextResponse.json(
       { payment_url: payUrl, invoice_id: invoice.id, status: 'pending' },
