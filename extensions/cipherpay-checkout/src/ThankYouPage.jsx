@@ -55,21 +55,24 @@ function CipherPayThankYou() {
     const MAX_ATTEMPTS = 10;
     const RETRY_MS = 2000;
 
+    async function doFetch() {
+      let token = null;
+      try { token = await shopify.idToken(); } catch (_) {}
+
+      const headers = { "Content-Type": "application/json" };
+      if (token) headers["Authorization"] = `Bearer ${token}`;
+
+      const res = await fetch(`${API_BASE}/api/extension/payment`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ shop, order_id: orderId, session_token: token }),
+      });
+      return res.json();
+    }
+
     async function fetchPayment() {
       try {
-        let token = null;
-        try { token = await shopify.idToken(); } catch (_) {}
-
-        const headers = { "Content-Type": "application/json" };
-        if (token) headers["Authorization"] = `Bearer ${token}`;
-
-        const res = await fetch(`${API_BASE}/api/extension/payment`, {
-          method: "POST",
-          headers,
-          body: JSON.stringify({ shop, order_id: orderId, session_token: token }),
-        });
-        const data = await res.json();
-
+        const data = await doFetch();
         if (cancelled) return;
 
         if (data.payment_url) {
@@ -97,8 +100,24 @@ function CipherPayThankYou() {
       }
     }
 
-    fetchPayment();
-    return () => { cancelled = true; };
+    // Poll for status updates after initial load (payment may complete while page is open)
+    let pollTimer = null;
+    async function pollStatus() {
+      try {
+        const data = await doFetch();
+        if (cancelled) return;
+        if (data.status === "confirmed" || data.status === "detected") {
+          setStatus(data.status);
+        }
+      } catch (_) {}
+      if (!cancelled) pollTimer = setTimeout(pollStatus, 5000);
+    }
+
+    fetchPayment().then(() => {
+      if (!cancelled) pollTimer = setTimeout(pollStatus, 5000);
+    });
+
+    return () => { cancelled = true; clearTimeout(pollTimer); };
   }, []);
 
   if (skip) return null;

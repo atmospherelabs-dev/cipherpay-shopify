@@ -93,6 +93,7 @@ export async function POST(req: NextRequest) {
 
     const orderStatusUrl = orderData?.order_status_url || '';
     const returnParam = orderStatusUrl ? `&return_url=${encodeURIComponent(orderStatusUrl)}` : '';
+    console.log('extension/payment: redirect info', { shop, order_id, orderStatusUrl: orderStatusUrl || '(empty)', hasReturnParam: !!returnParam });
 
     if (existing?.cipherpay_invoice_id) {
       console.log('extension/payment: returning existing session', { invoiceId: existing.cipherpay_invoice_id });
