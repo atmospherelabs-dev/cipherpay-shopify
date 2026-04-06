@@ -41,6 +41,7 @@ function CipherPayOrderStatus() {
           },
           body: JSON.stringify({
             order_id: orderId,
+            session_token: token,
           }),
         });
 

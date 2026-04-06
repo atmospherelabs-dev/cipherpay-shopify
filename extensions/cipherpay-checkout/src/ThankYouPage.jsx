@@ -64,7 +64,7 @@ function CipherPayThankYou() {
             "Content-Type": "application/json",
             "Authorization": `Bearer ${token}`,
           },
-          body: JSON.stringify({ order_id: orderId }),
+          body: JSON.stringify({ order_id: orderId, session_token: token }),
         });
         const data = await res.json();
 
