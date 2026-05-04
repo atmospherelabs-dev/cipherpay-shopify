@@ -24,8 +24,7 @@ export async function GET(req: NextRequest) {
 
     const existing = await getPaymentSessionByOrderId(shop, orderId);
     if (existing?.cipherpay_invoice_id) {
-      const orderStatusUrl = existing.order_status_url || `https://${shop}`;
-      const returnParam = `&return_url=${encodeURIComponent(orderStatusUrl)}`;
+      const returnParam = `&return_url=${encodeURIComponent(`https://${shop}`)}`;
       return NextResponse.redirect(
         new URL(`${checkoutDomain}/pay/${existing.cipherpay_invoice_id}?theme=dark${returnParam}`)
       );
