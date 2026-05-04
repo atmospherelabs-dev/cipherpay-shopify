@@ -6,9 +6,6 @@ handle = "cipherpay-checkout"
 uid = "0b07d4b1-550f-a349-c80a-d9084dff61aa2b6dd6bf"
 type = "ui_extension"
 
-[extensions.capabilities]
-network_access = true
-
 [[extensions.targeting]]
 module = "./src/ThankYouPage.jsx"
 target = "purchase.thank-you.block.render"
