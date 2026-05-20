@@ -49,6 +49,14 @@ export interface ShopifyDeployStatus {
   error: string | null;
 }
 
+export interface PendingShopConfig {
+  shop: string;
+  cipherpay_api_key: string;
+  cipherpay_api_url: string;
+  cipherpay_webhook_secret: string;
+  created_at: string;
+}
+
 export interface PaymentSession {
   id: string;
   shop: string;
@@ -60,6 +68,7 @@ export interface PaymentSession {
 }
 
 function shopKey(shop: string) { return `shop:${shop}`; }
+function pendingShopConfigKey(shop: string) { return `pending-shop-config:${shop}`; }
 function shopifyAppKey(clientId: string) { return `shopify-app:${clientId}`; }
 function shopifyAppShopKey(shop: string) { return `shopify-app-shop:${shop}`; }
 function shopifyOAuthStateKey(nonce: string) { return `shopify-oauth-state:${nonce}`; }
@@ -117,15 +126,19 @@ function decryptSecret(encryptedSecret: string): string {
 
 export async function saveShop(shop: string, accessToken: string, shopifyAppClientId?: string | null): Promise<void> {
   const existing = await getShop(shop);
+  const pendingConfig = await getPendingShopConfig(shop);
   const data: Shop = {
     shop,
     access_token: accessToken,
     shopify_app_client_id: shopifyAppClientId ?? existing?.shopify_app_client_id ?? null,
-    cipherpay_api_key: existing?.cipherpay_api_key ?? null,
-    cipherpay_api_url: existing?.cipherpay_api_url ?? 'https://api.cipherpay.app',
-    cipherpay_webhook_secret: existing?.cipherpay_webhook_secret ?? null,
+    cipherpay_api_key: existing?.cipherpay_api_key ?? pendingConfig?.cipherpay_api_key ?? null,
+    cipherpay_api_url: existing?.cipherpay_api_url ?? pendingConfig?.cipherpay_api_url ?? 'https://api.cipherpay.app',
+    cipherpay_webhook_secret: existing?.cipherpay_webhook_secret ?? pendingConfig?.cipherpay_webhook_secret ?? null,
   };
   await redis.set(shopKey(shop), JSON.stringify(data));
+  if (pendingConfig) {
+    await redis.del(pendingShopConfigKey(shop));
+  }
 }
 
 export async function getShop(shop: string): Promise<Shop | null> {
@@ -150,6 +163,30 @@ export async function updateShopConfig(
   if (config.cipherpay_webhook_secret !== undefined) existing.cipherpay_webhook_secret = config.cipherpay_webhook_secret;
 
   await redis.set(shopKey(shop), JSON.stringify(existing));
+}
+
+export async function savePendingShopConfig(
+  shop: string,
+  config: {
+    cipherpay_api_key: string;
+    cipherpay_api_url: string;
+    cipherpay_webhook_secret: string;
+  }
+): Promise<void> {
+  const data: PendingShopConfig = {
+    shop,
+    cipherpay_api_key: config.cipherpay_api_key,
+    cipherpay_api_url: config.cipherpay_api_url,
+    cipherpay_webhook_secret: config.cipherpay_webhook_secret,
+    created_at: new Date().toISOString(),
+  };
+  await redis.set(pendingShopConfigKey(shop), JSON.stringify(data), { ex: 86400 });
+}
+
+export async function getPendingShopConfig(shop: string): Promise<PendingShopConfig | null> {
+  const data = await redis.get<string>(pendingShopConfigKey(shop));
+  if (!data) return null;
+  return typeof data === 'string' ? JSON.parse(data) : data as unknown as PendingShopConfig;
 }
 
 export async function saveShopifyAppCredentials(
