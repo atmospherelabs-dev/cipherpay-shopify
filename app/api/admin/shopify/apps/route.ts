@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { saveShopifyAppCredentials } from '@/lib/db';
+import { enqueueShopifyDeployJob, saveShopifyAppCredentials } from '@/lib/db';
 
 function normalizeShop(shop: string): string {
   let normalized = shop.trim().replace(/^https?:\/\//, '').replace(/\/+$/, '');
@@ -29,11 +29,15 @@ export async function POST(req: NextRequest) {
     client_id?: string;
     client_secret?: string;
     shop_domain?: string;
+    app_name?: string;
+    app_automation_token?: string;
   } | null;
 
   const clientId = body?.client_id?.trim();
   const clientSecret = body?.client_secret?.trim();
   const shopDomain = body?.shop_domain ? normalizeShop(body.shop_domain) : null;
+  const appName = body?.app_name?.trim() || 'CipherPay';
+  const appAutomationToken = body?.app_automation_token?.trim();
 
   if (!clientId || !isValidClientId(clientId)) {
     return NextResponse.json({ error: 'Invalid client_id' }, { status: 400 });
@@ -49,6 +53,9 @@ export async function POST(req: NextRequest) {
 
   await saveShopifyAppCredentials(clientId, clientSecret, shopDomain);
   const host = process.env.HOST || 'https://connect.cipherpay.app';
+  const deployStatus = appAutomationToken
+    ? await enqueueShopifyDeployJob(clientId, appAutomationToken, appName, host)
+    : null;
 
   return NextResponse.json({
     ok: true,
@@ -56,5 +63,9 @@ export async function POST(req: NextRequest) {
     shop_domain: shopDomain,
     app_url: `${host}/api/auth/tenant/${clientId}`,
     redirect_url: `${host}/api/auth/callback`,
+    deploy_job: deployStatus ? {
+      id: deployStatus.id,
+      status: deployStatus.status,
+    } : null,
   });
 }

@@ -30,6 +30,25 @@ export interface ShopifyOAuthState {
   created_at: string;
 }
 
+export interface ShopifyDeployJob {
+  id: string;
+  client_id: string;
+  app_name: string;
+  host: string;
+  encrypted_automation_token: string;
+  created_at: string;
+}
+
+export interface ShopifyDeployStatus {
+  id: string;
+  client_id: string;
+  app_name: string;
+  status: 'queued' | 'processing' | 'deployed' | 'failed';
+  created_at: string;
+  updated_at: string;
+  error: string | null;
+}
+
 export interface PaymentSession {
   id: string;
   shop: string;
@@ -44,6 +63,9 @@ function shopKey(shop: string) { return `shop:${shop}`; }
 function shopifyAppKey(clientId: string) { return `shopify-app:${clientId}`; }
 function shopifyAppShopKey(shop: string) { return `shopify-app-shop:${shop}`; }
 function shopifyOAuthStateKey(nonce: string) { return `shopify-oauth-state:${nonce}`; }
+function shopifyDeployJobKey(id: string) { return `shopify-deploy-job:${id}`; }
+function shopifyDeployStatusKey(id: string) { return `shopify-deploy-status:${id}`; }
+const shopifyDeployQueueKey = 'shopify-deploy-queue';
 function sessionKey(id: string) { return `session:${id}`; }
 function invoiceMapKey(invoiceId: string) { return `invoice:${invoiceId}`; }
 function orderMapKey(shop: string, orderId: string) { return `order:${shop}:${orderId}`; }
@@ -205,6 +227,45 @@ export async function getShopifyOAuthState(nonce: string): Promise<ShopifyOAuthS
 
 export async function deleteShopifyOAuthState(nonce: string): Promise<void> {
   await redis.del(shopifyOAuthStateKey(nonce));
+}
+
+export async function enqueueShopifyDeployJob(
+  clientId: string,
+  automationToken: string,
+  appName = 'CipherPay',
+  host = process.env.HOST || 'https://connect.cipherpay.app'
+): Promise<ShopifyDeployStatus> {
+  const id = crypto.randomUUID();
+  const now = new Date().toISOString();
+  const job: ShopifyDeployJob = {
+    id,
+    client_id: clientId,
+    app_name: appName,
+    host,
+    encrypted_automation_token: encryptSecret(automationToken),
+    created_at: now,
+  };
+  const status: ShopifyDeployStatus = {
+    id,
+    client_id: clientId,
+    app_name: appName,
+    status: 'queued',
+    created_at: now,
+    updated_at: now,
+    error: null,
+  };
+
+  await redis.set(shopifyDeployJobKey(id), JSON.stringify(job), { ex: 900 });
+  await redis.set(shopifyDeployStatusKey(id), JSON.stringify(status), { ex: 86400 });
+  await redis.lpush(shopifyDeployQueueKey, id);
+
+  return status;
+}
+
+export async function getShopifyDeployStatus(id: string): Promise<ShopifyDeployStatus | null> {
+  const data = await redis.get<string>(shopifyDeployStatusKey(id));
+  if (!data) return null;
+  return typeof data === 'string' ? JSON.parse(data) : data as unknown as ShopifyDeployStatus;
 }
 
 export async function createPaymentSession(session: {
