@@ -275,43 +275,37 @@ export default function SettingsPage() {
         )}
 
         <div style={{ marginTop: 32, paddingTop: 24, borderTop: '1px solid #27272a' }}>
-          <h3 style={{ fontSize: 13, color: '#a1a1aa', marginTop: 0, marginBottom: 12 }}>Setup Instructions</h3>
+          <h3 style={{ fontSize: 13, color: '#a1a1aa', marginTop: 0, marginBottom: 12 }}>Setup Status</h3>
 
           <div style={{ fontSize: 12, color: '#71717a', lineHeight: 1.8 }}>
             <p style={{ marginTop: 0 }}>
-              <strong style={{ color: '#a1a1aa' }}>1.</strong> In your CipherPay dashboard, set your webhook URL to:
-            </p>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16 }}>
-              <code style={{
-                flex: 1, display: 'block', padding: '8px 12px',
-                backgroundColor: '#18181b', borderRadius: 4,
-                fontSize: 11, color: '#00D4FF', wordBreak: 'break-all',
-              }}>
-                {webhookUrl || `${typeof window !== 'undefined' ? window.location.origin : ''}/api/webhook/cipherpay`}
-              </code>
-              <CopyBtn text={webhookUrl || `${typeof window !== 'undefined' ? window.location.origin : ''}/api/webhook/cipherpay`} />
-            </div>
-
-            <p>
-              <strong style={{ color: '#a1a1aa' }}>2.</strong> Go to <strong style={{ color: '#a1a1aa' }}>Settings → Payments → Additional payment methods</strong> in your Shopify admin.
+              <strong style={{ color: '#22c55e' }}>✓</strong> CipherPay API credentials are configured for this Shopify store.
             </p>
 
             <p>
-              <strong style={{ color: '#a1a1aa' }}>3.</strong> Search for <strong style={{ color: '#00D4FF' }}>CipherPay</strong> and click <strong style={{ color: '#a1a1aa' }}>Activate</strong>.
+              <strong style={{ color: '#a1a1aa' }}>1.</strong> In Shopify admin, go to <strong style={{ color: '#a1a1aa' }}>Settings → Payments → Manual payment methods</strong> and create:
             </p>
 
+            <code style={{
+              display: 'block', padding: '8px 12px', marginBottom: 16,
+              backgroundColor: '#18181b', borderRadius: 4,
+              fontSize: 11, color: '#00D4FF', wordBreak: 'break-all',
+            }}>
+              Pay with Zcash (ZEC)
+            </code>
+
             <p>
-              <strong style={{ color: '#a1a1aa' }}>4.</strong> Zcash (ZEC) will appear as a native payment option in your checkout, with a logo and redirect flow.
+              <strong style={{ color: '#a1a1aa' }}>2.</strong> Go to <strong style={{ color: '#a1a1aa' }}>Settings → Checkout → Customize</strong>, switch to the <strong style={{ color: '#a1a1aa' }}>Thank you</strong> page, and add the <strong style={{ color: '#00D4FF' }}>CipherPay Checkout</strong> app block.
             </p>
 
             <p style={{ marginBottom: 0 }}>
-              <strong style={{ color: '#a1a1aa' }}>5.</strong> Place a test order to verify. Customers select Zcash at checkout and are redirected to CipherPay to complete payment.
+              <strong style={{ color: '#a1a1aa' }}>3.</strong> Place a test order. Customers select <strong style={{ color: '#a1a1aa' }}>Pay with Zcash (ZEC)</strong>, then click <strong style={{ color: '#00D4FF' }}>Pay with CipherPay</strong> on the Thank You page.
             </p>
           </div>
 
           <div style={{ marginTop: 24, paddingTop: 16, borderTop: '1px solid #1a1a1e' }}>
             <p style={{ fontSize: 10, color: '#3f3f46', margin: 0, lineHeight: 1.6 }}>
-              Legacy: If you previously used the manual payment method (&quot;Pay with Zcash&quot;), it will continue to work alongside the native payments extension. You can remove the manual method after activating CipherPay as an additional payment method.
+              Advanced: the webhook endpoint used for payment confirmations is <code>{webhookUrl || `${typeof window !== 'undefined' ? window.location.origin : ''}/api/webhook/cipherpay`}</code>. You normally do not need to edit this manually when setup is completed from the CipherPay dashboard.
             </p>
           </div>
         </div>
