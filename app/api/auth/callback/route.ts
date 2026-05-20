@@ -1,7 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import crypto from 'crypto';
 import { verifyHmac, exchangeCodeForToken, registerWebhooks } from '@/lib/shopify';
-import { saveShop } from '@/lib/db';
+import {
+  deleteShopifyOAuthState,
+  getShopifyAppCredentials,
+  getShopifyOAuthState,
+  saveShop,
+} from '@/lib/db';
 
 export async function GET(req: NextRequest) {
   const params = Object.fromEntries(req.nextUrl.searchParams.entries());
@@ -16,13 +21,29 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: 'Invalid state parameter' }, { status: 403 });
   }
 
-  if (!verifyHmac(params)) {
+  const oauthState = await getShopifyOAuthState(storedState);
+  if (oauthState && oauthState.shop !== shop) {
+    return NextResponse.json({ error: 'OAuth shop mismatch' }, { status: 403 });
+  }
+
+  const appCredentials = oauthState?.client_id
+    ? await getShopifyAppCredentials(oauthState.client_id)
+    : null;
+
+  if (oauthState?.client_id && !appCredentials) {
+    return NextResponse.json({ error: 'Unknown Shopify app credentials' }, { status: 403 });
+  }
+
+  const clientSecret = appCredentials?.client_secret;
+  const clientId = appCredentials?.client_id;
+
+  if (!verifyHmac(params, clientSecret)) {
     return NextResponse.json({ error: 'HMAC verification failed' }, { status: 403 });
   }
 
   try {
-    const accessToken = await exchangeCodeForToken(shop, code);
-    await saveShop(shop, accessToken);
+    const accessToken = await exchangeCodeForToken(shop, code, { clientId, clientSecret });
+    await saveShop(shop, accessToken, clientId);
 
     try {
       await registerWebhooks(shop, accessToken);
@@ -39,6 +60,7 @@ export async function GET(req: NextRequest) {
 
     const response = NextResponse.redirect(redirectUrl);
     response.cookies.delete('shopify_oauth_state');
+    await deleteShopifyOAuthState(storedState);
     return response;
   } catch (err) {
     console.error('OAuth callback error:', err);

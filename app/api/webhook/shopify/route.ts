@@ -1,14 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { verifyWebhookHmac } from '@/lib/shopify';
-import { deleteShop } from '@/lib/db';
+import { deleteShop, getShopifyAppCredentialsByShop } from '@/lib/db';
 
 export async function POST(req: NextRequest) {
   const rawBody = Buffer.from(await req.arrayBuffer());
   const hmac = req.headers.get('x-shopify-hmac-sha256') || '';
   const topic = req.headers.get('x-shopify-topic') || '';
   const shopDomain = req.headers.get('x-shopify-shop-domain') || '';
+  const credentials = shopDomain ? await getShopifyAppCredentialsByShop(shopDomain) : null;
 
-  if (!verifyWebhookHmac(rawBody, hmac)) {
+  if (!verifyWebhookHmac(rawBody, hmac, credentials?.client_secret)) {
     return NextResponse.json({ error: 'Invalid HMAC' }, { status: 401 });
   }
 

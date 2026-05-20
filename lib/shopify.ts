@@ -5,12 +5,16 @@ const SHOPIFY_API_SECRET = process.env.SHOPIFY_API_SECRET!;
 const SHOPIFY_SCOPES = process.env.SHOPIFY_SCOPES || 'read_orders,write_orders';
 const HOST = process.env.HOST!;
 
-export function buildInstallUrl(shop: string): { url: string; state: string } {
-  const state = crypto.randomBytes(16).toString('hex');
+export function buildInstallUrl(
+  shop: string,
+  options: { clientId?: string; state?: string } = {}
+): { url: string; state: string } {
+  const state = options.state ?? crypto.randomBytes(16).toString('hex');
+  const clientId = options.clientId ?? SHOPIFY_API_KEY;
   const redirectUri = `${HOST}/api/auth/callback`;
 
   const url = `https://${shop}/admin/oauth/authorize?` +
-    `client_id=${SHOPIFY_API_KEY}` +
+    `client_id=${clientId}` +
     `&scope=${SHOPIFY_SCOPES}` +
     `&redirect_uri=${encodeURIComponent(redirectUri)}` +
     `&state=${state}`;
@@ -18,26 +22,34 @@ export function buildInstallUrl(shop: string): { url: string; state: string } {
   return { url, state };
 }
 
-export function verifyHmac(query: Record<string, string>): boolean {
+export function verifyHmac(query: Record<string, string>, clientSecret = SHOPIFY_API_SECRET): boolean {
   const { hmac, ...rest } = query;
   if (!hmac) return false;
 
   const sorted = Object.keys(rest).sort().map(k => `${k}=${rest[k]}`).join('&');
   const computed = crypto
-    .createHmac('sha256', SHOPIFY_API_SECRET)
+    .createHmac('sha256', clientSecret)
     .update(sorted)
     .digest('hex');
+
+  if (hmac.length !== computed.length) {
+    return false;
+  }
 
   return crypto.timingSafeEqual(Buffer.from(hmac), Buffer.from(computed));
 }
 
-export async function exchangeCodeForToken(shop: string, code: string): Promise<string> {
+export async function exchangeCodeForToken(
+  shop: string,
+  code: string,
+  credentials: { clientId?: string; clientSecret?: string } = {}
+): Promise<string> {
   const res = await fetch(`https://${shop}/admin/oauth/access_token`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      client_id: SHOPIFY_API_KEY,
-      client_secret: SHOPIFY_API_SECRET,
+      client_id: credentials.clientId ?? SHOPIFY_API_KEY,
+      client_secret: credentials.clientSecret ?? SHOPIFY_API_SECRET,
       code,
     }),
   });
@@ -121,10 +133,10 @@ export async function registerWebhooks(
   }
 }
 
-export function verifyWebhookHmac(body: Buffer, hmacHeader: string): boolean {
+export function verifyWebhookHmac(body: Buffer, hmacHeader: string, clientSecret = SHOPIFY_API_SECRET): boolean {
   try {
     const computed = crypto
-      .createHmac('sha256', SHOPIFY_API_SECRET)
+      .createHmac('sha256', clientSecret)
       .update(body)
       .digest();
     const provided = Buffer.from(hmacHeader, 'base64');

@@ -1,6 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { verifyWebhookHmac, shopifyAdminApi } from '@/lib/shopify';
-import { getShop, createPaymentSession, getPaymentSessionByOrderId, acquireOrderLock } from '@/lib/db';
+import {
+  acquireOrderLock,
+  createPaymentSession,
+  getPaymentSessionByOrderId,
+  getShop,
+  getShopifyAppCredentialsByShop,
+} from '@/lib/db';
 import { createInvoice } from '@/lib/cipherpay';
 import crypto from 'crypto';
 
@@ -25,7 +31,9 @@ export async function POST(req: NextRequest) {
     hasHmac: Boolean(hmac),
   });
 
-  if (!verifyWebhookHmac(rawBody, hmac)) {
+  const credentials = shopDomain ? await getShopifyAppCredentialsByShop(shopDomain) : null;
+
+  if (!verifyWebhookHmac(rawBody, hmac, credentials?.client_secret)) {
     console.error('orders/create webhook: HMAC verification failed');
     return NextResponse.json({ error: 'Invalid HMAC' }, { status: 401 });
   }
