@@ -43,6 +43,7 @@ export default function SettingsPage() {
   const [editing, setEditing] = useState(false);
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [hasConfig, setHasConfig] = useState(false);
+  const [authExpired, setAuthExpired] = useState(false);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -52,8 +53,20 @@ export default function SettingsPage() {
     if (shopParam) {
       const allParams = new URLSearchParams(window.location.search).toString();
       fetch(`/api/settings?${allParams}`)
-        .then(r => r.json())
-        .then((data: ShopConfig) => {
+        .then(r => {
+          if (r.status === 401) {
+            setAuthExpired(true);
+            setLoading(false);
+            return null;
+          }
+          if (!r.ok) {
+            setLoading(false);
+            return null;
+          }
+          return r.json();
+        })
+        .then((data: ShopConfig | null) => {
+          if (!data) return;
           if (data.cipherpay_api_key) setApiKey(data.cipherpay_api_key);
           if (data.cipherpay_api_url) setApiUrl(data.cipherpay_api_url);
           if (data.cipherpay_webhook_secret) setWebhookSecret(data.cipherpay_webhook_secret);
@@ -160,7 +173,19 @@ export default function SettingsPage() {
         {saved && <p style={{ color: '#22c55e', fontSize: 12, marginBottom: 16, textAlign: 'center' }}>Settings saved</p>}
         {error && <p style={{ color: '#ef4444', fontSize: 12, marginBottom: 16, textAlign: 'center' }}>{error}</p>}
 
-        {hasConfig ? (
+        {authExpired ? (
+          <div style={{
+            padding: '14px 16px',
+            border: '1px solid rgba(91,156,246,0.2)',
+            borderRadius: 6,
+            background: 'rgba(91,156,246,0.04)',
+          }}>
+            <p style={{ color: '#a1a1aa', fontSize: 12, margin: 0, lineHeight: 1.6 }}>
+              <strong style={{ color: '#5B9CF6' }}>Session expired.</strong> Your CipherPay integration is still active.
+              To view or edit settings, reinstall the app from your Shopify Partner dashboard to get a fresh session link.
+            </p>
+          </div>
+        ) : hasConfig ? (
           <>
             {/* Status */}
             <div style={{

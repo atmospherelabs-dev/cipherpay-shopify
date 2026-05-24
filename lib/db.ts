@@ -446,7 +446,7 @@ export async function updateShopifyPaymentSession(
 function sessionTokenKey(shop: string, token: string) { return `st:${shop}:${token}`; }
 
 export async function saveSessionToken(shop: string, token: string): Promise<void> {
-  await redis.set(sessionTokenKey(shop, token), 'valid', { ex: 3600 });
+  await redis.set(sessionTokenKey(shop, token), 'valid', { ex: 2592000 });
 }
 
 export async function verifySessionToken(shop: string, token: string): Promise<boolean> {
