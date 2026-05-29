@@ -140,6 +140,7 @@ Then set `HOST` in `.env` to your ngrok URL and update your Shopify app's redire
 - **[CipherPay API](https://github.com/atmospherelabs-dev/cipherpay-api)** — Rust backend
 - **[CipherPay Web](https://github.com/atmospherelabs-dev/cipherpay-web)** — Dashboard & checkout frontend
 - **[CipherScan](https://cipherscan.app)** — Zcash blockchain explorer
+- **[Zipher](https://zipher.to)** — Zcash wallet (mobile, desktop & CLI)
 
 ## License
 
