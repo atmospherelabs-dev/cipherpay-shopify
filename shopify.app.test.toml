@@ -1,0 +1,15 @@
+client_id = "2c2499711de0457729f494acd8e2a6ef"
+name = "CipherPay Test"
+application_url = "https://connect.cipherpay.app/api/auth/tenant/2c2499711de0457729f494acd8e2a6ef"
+embedded = false
+
+[webhooks]
+api_version = "2026-04"
+
+[access_scopes]
+scopes = "read_orders,write_orders"
+optional_scopes = [ ]
+use_legacy_install_flow = false
+
+[auth]
+redirect_urls = [ "https://connect.cipherpay.app/api/auth/callback" ]

@@ -10,6 +10,7 @@
     "worker:shopify": "node scripts/shopify-deploy-worker.mjs"
   },
   "dependencies": {
+    "@upstash/qstash": "^2.11.3",
     "@upstash/redis": "^1.34.0",
     "jose": "^6.2.2",
     "next": "^15.0.0",

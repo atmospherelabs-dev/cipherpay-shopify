@@ -2,16 +2,22 @@
 import crypto from 'crypto';
 import fs from 'fs/promises';
 import path from 'path';
+import { createServer } from 'node:http';
 import { spawn } from 'child_process';
 import { Redis } from '@upstash/redis';
+import { Receiver } from '@upstash/qstash';
 
 const redis = new Redis({
   url: process.env.UPSTASH_REDIS_REST_URL,
   token: process.env.UPSTASH_REDIS_REST_TOKEN,
 });
 
-const QUEUE_KEY = 'shopify-deploy-queue';
-const POLL_MS = Number(process.env.SHOPIFY_DEPLOY_WORKER_POLL_MS || 5000);
+const receiver = new Receiver({
+  currentSigningKey: requireEnv('QSTASH_CURRENT_SIGNING_KEY'),
+  nextSigningKey: requireEnv('QSTASH_NEXT_SIGNING_KEY'),
+});
+
+const PORT = Number(process.env.DEPLOY_WORKER_PORT || 9100);
 
 function requireEnv(name) {
   const value = process.env[name];
@@ -150,9 +156,11 @@ redirect_urls = [ "${redirectUrl}" ]
 async function processJob(id) {
   const job = parseRedisJson(await redis.get(jobKey(id)));
   if (!job) {
+    console.log(`Job ${id} not found (already processed or expired)`);
     return;
   }
 
+  console.log(`Processing deploy job ${id} for app ${job.client_id}`);
   await updateStatus(id, { status: 'processing', error: null });
 
   let automationToken = '';
@@ -160,33 +168,83 @@ async function processJob(id) {
     automationToken = decryptSecret(job.encrypted_automation_token);
     await runShopifyDeploy(job, automationToken);
     await updateStatus(id, { status: 'deployed', error: null });
+    console.log(`Deploy job ${id} completed successfully`);
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown deploy error';
     await updateStatus(id, { status: 'failed', error: sanitizeOutput(message, automationToken).slice(0, 4000) });
+    console.error(`Deploy job ${id} failed:`, sanitizeOutput(message, automationToken).slice(0, 500));
   } finally {
     automationToken = '';
     await redis.del(jobKey(id));
   }
 }
 
-async function main() {
+async function readBody(req) {
+  const chunks = [];
+  for await (const chunk of req) chunks.push(chunk);
+  return Buffer.concat(chunks).toString();
+}
+
+function main() {
   requireEnv('UPSTASH_REDIS_REST_URL');
   requireEnv('UPSTASH_REDIS_REST_TOKEN');
   requireEnv('SHOPIFY_CREDENTIALS_KEY');
 
-  console.log('CipherPay Shopify deploy worker started');
-
-  while (true) {
-    const id = await redis.rpop(QUEUE_KEY);
-    if (id) {
-      await processJob(String(id));
-    } else {
-      await new Promise((resolve) => setTimeout(resolve, POLL_MS));
+  const server = createServer(async (req, res) => {
+    if (req.method !== 'POST' || req.url !== '/deploy') {
+      res.writeHead(404);
+      res.end();
+      return;
     }
-  }
+
+    const body = await readBody(req);
+
+    const signature = req.headers['upstash-signature'];
+    if (!signature || typeof signature !== 'string') {
+      res.writeHead(401);
+      res.end();
+      return;
+    }
+
+    try {
+      await receiver.verify({ signature, body });
+    } catch {
+      console.warn('QStash signature verification failed');
+      res.writeHead(401);
+      res.end();
+      return;
+    }
+
+    let jobId;
+    try {
+      const parsed = JSON.parse(body);
+      jobId = parsed.jobId;
+    } catch {
+      res.writeHead(400);
+      res.end();
+      return;
+    }
+
+    if (!jobId || typeof jobId !== 'string') {
+      res.writeHead(400);
+      res.end();
+      return;
+    }
+
+    try {
+      await processJob(jobId);
+      res.writeHead(200);
+      res.end('OK');
+    } catch (error) {
+      console.error('Unhandled error processing deploy job:', error);
+      res.writeHead(500);
+      res.end();
+    }
+  });
+
+  server.listen(PORT, () => {
+    console.log(`CipherPay Shopify deploy worker listening on port ${PORT}`);
+  });
 }
 
-main().catch((error) => {
-  console.error('Shopify deploy worker crashed:', error);
-  process.exit(1);
-});
+main();

@@ -1,10 +1,21 @@
 import crypto from 'crypto';
 import { Redis } from '@upstash/redis';
+import { Client as QStashClient } from '@upstash/qstash';
 
 const redis = new Redis({
   url: process.env.UPSTASH_REDIS_REST_URL!,
   token: process.env.UPSTASH_REDIS_REST_TOKEN!,
 });
+
+let _qstash: QStashClient | null = null;
+function getQStash(): QStashClient {
+  if (!_qstash) {
+    const token = process.env.QSTASH_TOKEN;
+    if (!token) throw new Error('QSTASH_TOKEN is required for deploy job scheduling');
+    _qstash = new QStashClient({ token });
+  }
+  return _qstash;
+}
 
 export interface Shop {
   shop: string;
@@ -74,7 +85,6 @@ function shopifyAppShopKey(shop: string) { return `shopify-app-shop:${shop}`; }
 function shopifyOAuthStateKey(nonce: string) { return `shopify-oauth-state:${nonce}`; }
 function shopifyDeployJobKey(id: string) { return `shopify-deploy-job:${id}`; }
 function shopifyDeployStatusKey(id: string) { return `shopify-deploy-status:${id}`; }
-const shopifyDeployQueueKey = 'shopify-deploy-queue';
 function sessionKey(id: string) { return `session:${id}`; }
 function invoiceMapKey(invoiceId: string) { return `invoice:${invoiceId}`; }
 function orderMapKey(shop: string, orderId: string) { return `order:${shop}:${orderId}`; }
@@ -294,7 +304,14 @@ export async function enqueueShopifyDeployJob(
 
   await redis.set(shopifyDeployJobKey(id), JSON.stringify(job), { ex: 900 });
   await redis.set(shopifyDeployStatusKey(id), JSON.stringify(status), { ex: 86400 });
-  await redis.lpush(shopifyDeployQueueKey, id);
+
+  const workerUrl = process.env.SHOPIFY_DEPLOY_WORKER_URL;
+  if (!workerUrl) throw new Error('SHOPIFY_DEPLOY_WORKER_URL is required for deploy job scheduling');
+  await getQStash().publishJSON({
+    url: `${workerUrl}/deploy`,
+    body: { jobId: id },
+    retries: 2,
+  });
 
   return status;
 }

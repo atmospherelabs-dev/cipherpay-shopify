@@ -4,6 +4,7 @@ import { render } from "preact";
 
 const API_BASE = "https://connect.cipherpay.app";
 const LOGO_URL = "https://cipherpay.app/logo-mark.png";
+const ZEC_KEYWORDS = /zcash|zec|cipherpay/i;
 
 function normalizeId(id) {
   if (!id) return null;
@@ -28,6 +29,21 @@ function getShop() {
   try { return shopify.shop.myshopifyDomain; } catch (_) { return null; }
 }
 
+function isZcashPayment() {
+  try {
+    const sig = shopify.selectedPaymentOptions ?? shopify.payments?.selectedPaymentOptions;
+    const options = sig?.value ?? sig?.current;
+    if (!options || !Array.isArray(options)) return true; // fail open — server handles non-Zcash
+    return options.some(
+      (opt) =>
+        opt.type === "manualPayment" ||
+        (opt.handle && ZEC_KEYWORDS.test(opt.handle))
+    );
+  } catch (_) {
+    return true; // fail open
+  }
+}
+
 export default function () {
   render(<CipherPayThankYou />, document.body);
 }
@@ -37,6 +53,7 @@ function CipherPayThankYou() {
   const shop = getShop();
 
   if (!orderId || !shop) return null;
+  if (!isZcashPayment()) return null;
 
   const redirectUrl = `${API_BASE}/api/extension/redirect?shop=${encodeURIComponent(shop)}&order_id=${encodeURIComponent(orderId)}`;
 
