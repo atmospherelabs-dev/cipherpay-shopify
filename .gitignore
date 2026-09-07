@@ -9,3 +9,5 @@ node_modules/
 # Cursor IDE
 .cursor/
 .agents/
+.vercel
+.env*

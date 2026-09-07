@@ -13,3 +13,6 @@ target = "purchase.thank-you.block.render"
 [[extensions.targeting]]
 module = "./src/OrderStatusPage.jsx"
 target = "customer-account.order-status.block.render"
+
+[extensions.capabilities]
+network_access = true

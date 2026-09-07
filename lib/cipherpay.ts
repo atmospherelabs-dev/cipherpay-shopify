@@ -6,6 +6,18 @@ function sanitizeCipherPaySecret(value: string): string {
     .replace(/[\s\u2028\u2029]+/g, '');
 }
 
+/** Only send merchant credentials to operator-approved origins. */
+export function validateCipherPayApiUrl(value: string): string {
+  const url = new URL(value.trim());
+  const allowed = new Set(['https://api.cipherpay.app', 'https://api.testnet.cipherpay.app',
+    ...(process.env.CIPHERPAY_ALLOWED_API_ORIGINS || '').split(',').map(s => s.trim()).filter(Boolean)]);
+  if (url.protocol !== 'https:' || url.username || url.password || url.search || url.hash
+      || url.pathname !== '/' || !allowed.has(url.origin)) {
+    throw new Error('CipherPay API origin is not allowed');
+  }
+  return url.origin;
+}
+
 export interface CipherPayInvoice {
   id: string;
   memo_code: string;
@@ -29,10 +41,12 @@ export async function createInvoice(
     refund_address?: string;
   }
 ): Promise<CipherPayInvoice> {
-  const normalizedApiUrl = apiUrl.trim().replace(/\/+$/, '');
+  const normalizedApiUrl = validateCipherPayApiUrl(apiUrl);
   const normalizedApiKey = sanitizeCipherPaySecret(apiKey);
   const res = await fetch(`${normalizedApiUrl}/api/invoices`, {
     method: 'POST',
+    redirect: 'error',
+    signal: AbortSignal.timeout(15000),
     headers: {
       'Content-Type': 'application/json',
       'Authorization': `Bearer ${normalizedApiKey}`,

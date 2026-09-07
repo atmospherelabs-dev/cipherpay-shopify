@@ -49,9 +49,10 @@ export default function SettingsPage() {
     const params = new URLSearchParams(window.location.search);
     const shopParam = params.get('shop') || '';
     setShop(shopParam);
+    window.history.replaceState(null, '', `/settings?${new URLSearchParams({ shop: shopParam })}`);
 
     if (shopParam) {
-      const allParams = new URLSearchParams(window.location.search).toString();
+      const allParams = new URLSearchParams({ shop: shopParam }).toString();
       fetch(`/api/settings?${allParams}`)
         .then(r => {
           if (r.status === 401) {
@@ -85,7 +86,7 @@ export default function SettingsPage() {
     setSaved(false);
     setError('');
 
-    const allParams = new URLSearchParams(window.location.search).toString();
+    const allParams = new URLSearchParams({ shop }).toString();
     const res = await fetch(`/api/settings?${allParams}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },

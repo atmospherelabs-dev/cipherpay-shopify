@@ -71,6 +71,8 @@ export async function shopifyAdminApi(
 ) {
   const res = await fetch(`https://${shop}/admin/api/2026-01/${endpoint}`, {
     method: options.method || 'GET',
+    redirect: 'error',
+    signal: AbortSignal.timeout(15000),
     headers: {
       'Content-Type': 'application/json',
       'X-Shopify-Access-Token': accessToken,
@@ -91,19 +93,21 @@ export async function markOrderAsPaid(
   accessToken: string,
   orderId: string
 ): Promise<void> {
-  const txRes = await shopifyAdminApi(shop, accessToken, `orders/${orderId}/transactions.json`, {
-    method: 'POST',
-    body: {
-      transaction: {
-        kind: 'capture',
-        status: 'success',
-        source: 'external',
-        gateway: 'CipherPay (ZEC)',
-      },
+  const { order } = await shopifyAdminApi(shop, accessToken, `orders/${orderId}.json`);
+  if (order?.financial_status === 'paid') return;
+  if (!order || order.cancelled_at || ['refunded','voided'].includes(order.financial_status)) throw new Error('Order cannot be marked paid');
+  const result = await shopifyAdminApi(shop, accessToken, 'graphql.json', {
+    method: 'POST', body: {
+      query: 'mutation MarkPaid($input: OrderMarkAsPaidInput!) { orderMarkAsPaid(input: $input) { order { id } userErrors { message } } }',
+      variables: { input: { id: `gid://shopify/Order/${orderId}` } },
     },
   });
+  if (result.errors?.length || result.data?.orderMarkAsPaid?.userErrors?.length || !result.data?.orderMarkAsPaid?.order?.id) {
+    // A lost response may follow a successful mutation. Reconcile before retrying.
+    const retry = await shopifyAdminApi(shop, accessToken, `orders/${orderId}.json`);
+    if (retry.order?.financial_status !== 'paid') throw new Error('Shopify did not confirm payment');
+  }
 
-  return txRes;
 }
 
 export async function registerWebhooks(

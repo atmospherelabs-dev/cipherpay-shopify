@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import crypto from 'crypto';
+import { setSettingsSession } from '@/lib/settings-session';
 import { verifyHmac, exchangeCodeForToken, registerWebhooks } from '@/lib/shopify';
 import {
   deleteShopifyOAuthState,
@@ -22,7 +23,7 @@ export async function GET(req: NextRequest) {
   }
 
   const oauthState = await getShopifyOAuthState(storedState);
-  if (oauthState && oauthState.shop !== shop) {
+  if (!oauthState || oauthState.shop !== shop) {
     return NextResponse.json({ error: 'OAuth shop mismatch' }, { status: 403 });
   }
 
@@ -56,9 +57,10 @@ export async function GET(req: NextRequest) {
     await saveSessionToken(shop, sessionToken);
 
     const host = process.env.HOST || req.nextUrl.origin;
-    const redirectUrl = `${host}/settings?shop=${encodeURIComponent(shop)}&session_token=${sessionToken}`;
+    const redirectUrl = `${host}/settings?shop=${encodeURIComponent(shop)}`;
 
     const response = NextResponse.redirect(redirectUrl);
+    setSettingsSession(response, shop, sessionToken);
     response.cookies.delete('shopify_oauth_state');
     await deleteShopifyOAuthState(storedState);
     return response;

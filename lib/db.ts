@@ -134,6 +134,25 @@ function decryptSecret(encryptedSecret: string): string {
   ]).toString('utf8');
 }
 
+const secretFields = ['access_token', 'cipherpay_api_key', 'cipherpay_webhook_secret'] as const;
+function protectSecrets<T extends object>(data: T): string {
+  const stored = { ...data } as Record<string, unknown>;
+  for (const field of secretFields) {
+    if (typeof stored[field] === 'string' && stored[field]) stored[field] = encryptSecret(stored[field] as string);
+  }
+  return JSON.stringify({ ...stored, encryption_version: 1 });
+}
+function revealSecrets<T>(data: unknown): T {
+  const stored = (typeof data === 'string' ? JSON.parse(data) : data) as Record<string, unknown>;
+  if (stored.encryption_version === 1) {
+    for (const field of secretFields) {
+      if (typeof stored[field] === 'string' && stored[field]) stored[field] = decryptSecret(stored[field] as string);
+    }
+  }
+  delete stored.encryption_version;
+  return stored as T;
+}
+
 export async function saveShop(shop: string, accessToken: string, shopifyAppClientId?: string | null): Promise<void> {
   const existing = await getShop(shop);
   const pendingConfig = await getPendingShopConfig(shop);
@@ -145,7 +164,7 @@ export async function saveShop(shop: string, accessToken: string, shopifyAppClie
     cipherpay_api_url: existing?.cipherpay_api_url ?? pendingConfig?.cipherpay_api_url ?? 'https://api.cipherpay.app',
     cipherpay_webhook_secret: existing?.cipherpay_webhook_secret ?? pendingConfig?.cipherpay_webhook_secret ?? null,
   };
-  await redis.set(shopKey(shop), JSON.stringify(data));
+  await redis.set(shopKey(shop), protectSecrets(data));
   if (pendingConfig) {
     await redis.del(pendingShopConfigKey(shop));
   }
@@ -154,7 +173,7 @@ export async function saveShop(shop: string, accessToken: string, shopifyAppClie
 export async function getShop(shop: string): Promise<Shop | null> {
   const data = await redis.get<string>(shopKey(shop));
   if (!data) return null;
-  const shopData = typeof data === 'string' ? JSON.parse(data) : data as unknown as Shop;
+  const shopData = revealSecrets<Shop>(data);
   return {
     ...shopData,
     shopify_app_client_id: shopData.shopify_app_client_id ?? null,
@@ -172,7 +191,7 @@ export async function updateShopConfig(
   if (config.cipherpay_api_url !== undefined) existing.cipherpay_api_url = config.cipherpay_api_url;
   if (config.cipherpay_webhook_secret !== undefined) existing.cipherpay_webhook_secret = config.cipherpay_webhook_secret;
 
-  await redis.set(shopKey(shop), JSON.stringify(existing));
+  await redis.set(shopKey(shop), protectSecrets(existing));
 }
 
 export async function savePendingShopConfig(
@@ -190,13 +209,13 @@ export async function savePendingShopConfig(
     cipherpay_webhook_secret: config.cipherpay_webhook_secret,
     created_at: new Date().toISOString(),
   };
-  await redis.set(pendingShopConfigKey(shop), JSON.stringify(data), { ex: 86400 });
+  await redis.set(pendingShopConfigKey(shop), protectSecrets(data), { ex: 86400 });
 }
 
 export async function getPendingShopConfig(shop: string): Promise<PendingShopConfig | null> {
   const data = await redis.get<string>(pendingShopConfigKey(shop));
   if (!data) return null;
-  return typeof data === 'string' ? JSON.parse(data) : data as unknown as PendingShopConfig;
+  return revealSecrets<PendingShopConfig>(data);
 }
 
 export async function saveShopifyAppCredentials(
@@ -340,13 +359,13 @@ export async function createPaymentSession(session: {
     status: 'pending',
   };
   // Sessions expire after 24 hours
-  await redis.set(sessionKey(session.id), JSON.stringify(data), { ex: 86400 });
+  await redis.set(sessionKey(session.id), JSON.stringify(data), { ex: 2592000 });
 
   if (session.cipherpay_invoice_id) {
-    await redis.set(invoiceMapKey(session.cipherpay_invoice_id), session.id, { ex: 86400 });
+    await redis.set(invoiceMapKey(session.cipherpay_invoice_id), session.id, { ex: 2592000 });
   }
   if (session.shopify_order_id) {
-    await redis.set(orderMapKey(session.shop, session.shopify_order_id), session.id, { ex: 86400 });
+    await redis.set(orderMapKey(session.shop, session.shopify_order_id), session.id, { ex: 2592000 });
   }
 }
 
@@ -373,17 +392,20 @@ export async function updatePaymentSession(id: string, updates: {
   shopify_order_id?: string;
   status?: string;
 }): Promise<void> {
-  const session = await getPaymentSession(id);
-  if (!session) return;
+  await redis.eval(`
+    local raw = redis.call('get', KEYS[1])
+    if not raw then return 0 end
+    local session = cjson.decode(raw)
+    local updates = cjson.decode(ARGV[1])
+    if updates.cipherpay_invoice_id then session.cipherpay_invoice_id = updates.cipherpay_invoice_id end
+    if updates.shopify_order_id then session.shopify_order_id = updates.shopify_order_id end
+    if updates.status and session.status ~= 'confirmed' and session.status ~= 'refunded' then
+      if updates.status == 'confirmed' or session.status == 'pending' or session.status == 'detected' then session.status = updates.status end
+    end
+    redis.call('set', KEYS[1], cjson.encode(session), 'EX', 2592000)
+    return 1`, [sessionKey(id)], [JSON.stringify(updates)]);
+  if (updates.cipherpay_invoice_id) await redis.set(invoiceMapKey(updates.cipherpay_invoice_id), id, { ex: 2592000 });
 
-  if (updates.cipherpay_invoice_id !== undefined) {
-    session.cipherpay_invoice_id = updates.cipherpay_invoice_id;
-    await redis.set(invoiceMapKey(updates.cipherpay_invoice_id), id, { ex: 86400 });
-  }
-  if (updates.shopify_order_id !== undefined) session.shopify_order_id = updates.shopify_order_id;
-  if (updates.status !== undefined) session.status = updates.status;
-
-  await redis.set(sessionKey(id), JSON.stringify(session), { ex: 86400 });
 }
 
 export async function deleteShop(shop: string): Promise<void> {
@@ -391,8 +413,31 @@ export async function deleteShop(shop: string): Promise<void> {
   if (existing?.shopify_app_client_id) {
     await redis.del(shopifyAppKey(existing.shopify_app_client_id));
   }
+  // Remove legacy mappings too, including records created before the repair.
+  for (const pattern of ['session:*', 'sps:*', `st:${shop}:*`, `st-v2:${shop}:*`]) {
+    let cursor = 0;
+    do {
+      const page = await redis.scan(cursor, { match: pattern, count: 100 });
+      cursor = Number(page[0]);
+      for (const key of page[1]) {
+        if (pattern.startsWith('st')) { await redis.del(key); continue; }
+        const raw = await redis.get(key);
+        const data = typeof raw === 'string' ? JSON.parse(raw) : raw as PaymentSession | null;
+        if (data?.shop !== shop) continue;
+        await redis.del(key);
+        if (data.cipherpay_invoice_id) await redis.del(invoiceMapKey(data.cipherpay_invoice_id), spInvoiceMapKey(data.cipherpay_invoice_id));
+        if (data.shopify_order_id) await redis.del(orderMapKey(shop, data.shopify_order_id));
+      }
+    } while (cursor !== 0);
+  }
+  for (const id of await redis.smembers<string[]>('fulfillment-pending')) {
+    const job = await getFulfillment(id);
+    if (job?.shop === shop) { await redis.srem('fulfillment-pending',id); await redis.del(`fulfillment:${id}`); }
+  }
   await redis.del(shopifyAppShopKey(shop));
-  await redis.del(shopKey(shop));
+  const tokens = await redis.smembers<string[]>(`shop-sessions:${shop}`);
+  if (tokens.length) await redis.del(...tokens);
+  await redis.del(`shop-sessions:${shop}`, pendingShopConfigKey(shop), shopKey(shop));
 }
 
 function orderLockKey(shop: string, orderId: string) { return `lock:order:${shop}:${orderId}`; }
@@ -422,9 +467,9 @@ function spSessionKey(id: string) { return `sps:${id}`; }
 function spInvoiceMapKey(invoiceId: string) { return `sps-inv:${invoiceId}`; }
 
 export async function saveShopifyPaymentSession(session: ShopifyPaymentSession): Promise<void> {
-  await redis.set(spSessionKey(session.id), JSON.stringify(session), { ex: 86400 });
+  await redis.set(spSessionKey(session.id), JSON.stringify(session), { ex: 2592000 });
   if (session.cipherpay_invoice_id) {
-    await redis.set(spInvoiceMapKey(session.cipherpay_invoice_id), session.id, { ex: 86400 });
+    await redis.set(spInvoiceMapKey(session.cipherpay_invoice_id), session.id, { ex: 2592000 });
   }
 }
 
@@ -450,23 +495,77 @@ export async function updateShopifyPaymentSession(
   if (updates.cipherpay_invoice_id !== undefined) {
     session.cipherpay_invoice_id = updates.cipherpay_invoice_id;
     if (updates.cipherpay_invoice_id) {
-      await redis.set(spInvoiceMapKey(updates.cipherpay_invoice_id), id, { ex: 86400 });
+      await redis.set(spInvoiceMapKey(updates.cipherpay_invoice_id), id, { ex: 2592000 });
     }
   }
-  if (updates.status !== undefined) session.status = updates.status;
+  if (updates.status !== undefined && session.status === 'pending') session.status = updates.status;
 
-  await redis.set(spSessionKey(id), JSON.stringify(session), { ex: 86400 });
+  await redis.set(spSessionKey(id), JSON.stringify(session), { ex: 2592000 });
 }
 
 // --- Session Tokens (post-OAuth settings auth) ---
 
-function sessionTokenKey(shop: string, token: string) { return `st:${shop}:${token}`; }
+function sessionTokenKey(shop: string, token: string) { return `st-v2:${shop}:${crypto.createHash('sha256').update(token).digest('hex')}`; }
 
 export async function saveSessionToken(shop: string, token: string): Promise<void> {
-  await redis.set(sessionTokenKey(shop, token), 'valid', { ex: 2592000 });
+  await redis.set(sessionTokenKey(shop, token), 'valid', { ex: 86400 });
+  await redis.sadd(`shop-sessions:${shop}`, sessionTokenKey(shop, token));
+  await redis.expire(`shop-sessions:${shop}`, 172800);
 }
 
 export async function verifySessionToken(shop: string, token: string): Promise<boolean> {
+  if (!await getShop(shop)) return false;
   const val = await redis.get(sessionTokenKey(shop, token));
   return val === 'valid' || val === '1' || val === 1;
+}
+
+// Durable, authenticated fulfillment inbox. Only completed jobs expire; failed jobs remain visible.
+export async function saveFulfillment(invoiceId: string, event: string, shop: string): Promise<string> {
+  const id = `${invoiceId}:${event}`;
+  await redis.set(`fulfillment:${id}`, JSON.stringify({ invoiceId, event, shop }), { nx: true });
+  await redis.sadd('fulfillment-pending', id);
+  return id;
+}
+export async function getFulfillment(id: string): Promise<{ invoiceId: string; event: string; shop: string } | null> {
+  const data = await redis.get(`fulfillment:${id}`);
+  return data ? (typeof data === 'string' ? JSON.parse(data) : data) as { invoiceId: string; event: string; shop: string } : null;
+}
+export async function pendingFulfillments(): Promise<string[]> {
+  // Sample across the entire backlog so a permanently failing job cannot starve newer payments.
+  return (await redis.srandmember<string[]>('fulfillment-pending', 50)) ?? [];
+}
+export async function completeFulfillment(id: string): Promise<void> {
+  await redis.srem('fulfillment-pending', id);
+  await redis.expire(`fulfillment:${id}`, 2592000);
+}
+export async function acquireFulfillmentLock(invoiceId: string): Promise<string | null> {
+  const token = crypto.randomUUID();
+  return await redis.set(`fulfillment-lock:${invoiceId}`, token, { nx: true, ex: 120 }) === 'OK' ? token : null;
+}
+export async function releaseFulfillmentLock(invoiceId: string, token: string): Promise<void> {
+  await redis.eval("if redis.call('get', KEYS[1]) == ARGV[1] then return redis.call('del', KEYS[1]) else return 0 end", [`fulfillment-lock:${invoiceId}`], [token]);
+}
+
+/** Operator migration, safe to rerun. Returns counts only, never credentials. */
+export async function migrateOperationalSecrets(): Promise<number> {
+  let migrated = 0;
+  for (const pattern of ['shop:*', 'pending-shop-config:*']) {
+    let cursor = 0;
+    do {
+      const [next, keys] = await redis.scan(cursor, { match: pattern, count: 100 });
+      cursor = Number(next);
+      for (const key of keys) {
+        const raw = await redis.get(key);
+        const data = typeof raw === 'string' ? JSON.parse(raw) : raw;
+        if (data && (data as { encryption_version?: number }).encryption_version !== 1) {
+          const ttl = await redis.ttl(key);
+          // Compare-and-set prevents overwriting a concurrent configuration change.
+          const encoded = protectSecrets(data as object);
+          migrated += Number(await redis.eval(`local raw = redis.call('get', KEYS[1]); if raw == ARGV[1] then redis.call('set', KEYS[1], ARGV[2]); if tonumber(ARGV[3]) > 0 then redis.call('expire', KEYS[1], ARGV[3]) end; return 1 else return 0 end`,
+            [key], [typeof raw === 'string' ? raw : JSON.stringify(raw), encoded, ttl]));
+        }
+      }
+    } while (cursor !== 0);
+  }
+  return migrated;
 }

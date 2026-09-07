@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getShop, getPaymentSessionByOrderId, createPaymentSession, acquireOrderLock } from '@/lib/db';
 import { createInvoice } from '@/lib/cipherpay';
 import { shopifyAdminApi } from '@/lib/shopify';
-import { verifyShopifySessionToken } from '@/lib/verify-session-token';
+import { verifyShopifySessionClaims } from '@/lib/verify-session-token';
 import crypto from 'crypto';
 
 function corsHeaders() {
@@ -25,45 +25,18 @@ export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
 
-    // Try JWT from header or body; fall back to shop domain validation
-    const authHeader = req.headers.get('Authorization');
-    const sessionToken = (authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null)
-      || body.session_token
-      || null;
-
-    let verifiedShop: string | null = null;
-    if (sessionToken) {
-      try {
-        verifiedShop = await verifyShopifySessionToken(sessionToken);
-      } catch (err) {
-        console.warn('extension/payment: JWT failed, trying shop fallback', err);
-      }
+    const token = req.headers.get('Authorization')?.match(/^Bearer (.+)$/)?.[1];
+    let identity;
+    try {
+      if (!token) throw new Error('Missing token');
+      identity = await verifyShopifySessionClaims(token);
+    } catch {
+      return NextResponse.json({ error: 'Authorization required' }, { status: 401, headers: corsHeaders() });
     }
-
-    if (!verifiedShop && body.shop) {
-      const fallbackShop = await getShop(body.shop);
-      if (fallbackShop?.cipherpay_api_key) {
-        verifiedShop = body.shop;
-      }
-    }
-
-    if (!verifiedShop) {
-      console.warn('extension/payment: no valid authentication');
-      return NextResponse.json(
-        { error: 'Authorization required' },
-        { status: 401, headers: corsHeaders() }
-      );
-    }
-    const shop = verifiedShop;
+    const shop = identity.shop;
     const order_id = normalizeOrderId(body.order_id || '');
-    console.log('extension/payment: request received', { shop, order_id });
-
-    if (!shop || !order_id) {
-      console.log('extension/payment: missing params', { shop, order_id });
-      return NextResponse.json(
-        { error: 'Missing shop or order_id' },
-        { status: 400, headers: corsHeaders() }
-      );
+    if ((body.shop && body.shop !== shop) || !/^[0-9]+$/.test(order_id)) {
+      return NextResponse.json({ error: 'Invalid order context' }, { status: 403, headers: corsHeaders() });
     }
 
     const shopData = await getShop(shop);
@@ -78,6 +51,31 @@ export async function POST(req: NextRequest) {
     const checkoutDomain = shopData.cipherpay_api_url.includes('testnet')
       ? 'https://testnet.cipherpay.app'
       : 'https://cipherpay.app';
+
+    let orderData: { total_price: string; currency: string; gateway?: string; payment_gateway_names?: string[]; line_items?: Array<{ title: string }>; order_status_url?: string; checkout_token?: string; customer?: { id: string | number } } | null = null;
+    try {
+      const res = await shopifyAdminApi(shop, shopData.access_token, `orders/${order_id}.json`);
+      orderData = res.order;
+    } catch (err) {
+      console.warn('extension/payment: could not fetch order', { shop, order_id, err });
+    }
+
+    if (!orderData) {
+      console.error('extension/payment: no order data available', { shop, order_id });
+      return NextResponse.json({ pending: true }, { status: 200, headers: corsHeaders() });
+    }
+
+    // A valid shop JWT does not authorize arbitrary order IDs. Require the
+    // high-entropy checkout capability or the signed customer's own order.
+    const checkout = typeof body.checkout_token === 'string' ? body.checkout_token : '';
+    const expected = orderData.checkout_token || '';
+    const checkoutMatches = checkout.length >= 16 && checkout.length === expected.length
+      && crypto.timingSafeEqual(Buffer.from(checkout), Buffer.from(expected));
+    const customerMatches = identity.customer?.startsWith('gid://shopify/Customer/')
+      && identity.customer === `gid://shopify/Customer/${orderData.customer?.id}`;
+    if (!checkoutMatches && !customerMatches) {
+      return NextResponse.json({ error: 'Order authorization required' }, { status: 403, headers: corsHeaders() });
+    }
 
     const existing = await getPaymentSessionByOrderId(shop, order_id);
     console.log('extension/payment: session lookup', { shop, order_id, found: Boolean(existing), invoiceId: existing?.cipherpay_invoice_id });
@@ -102,21 +100,8 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ pending: true }, { status: 200, headers: corsHeaders() });
     }
 
-    let orderData: { total_price: string; currency: string; gateway?: string; payment_gateway_names?: string[]; line_items?: Array<{ title: string }>; order_status_url?: string } | null = null;
-    try {
-      const res = await shopifyAdminApi(shop, shopData.access_token, `orders/${order_id}.json`);
-      orderData = res.order;
-    } catch (err) {
-      console.warn('extension/payment: could not fetch order', { shop, order_id, err });
-    }
+    const orderStatusUrl = `https://${shop}`;
 
-    if (!orderData) {
-      console.error('extension/payment: no order data available', { shop, order_id });
-      return NextResponse.json({ pending: true }, { status: 200, headers: corsHeaders() });
-    }
-
-    const orderStatusUrl = orderData.order_status_url || `https://${shop}`;
-    console.log('extension/payment: redirect info', { shop, order_id, orderStatusUrl });
 
     const gateway = (orderData.gateway || '').toLowerCase();
     const paymentMethod = (orderData.payment_gateway_names || []).join(' ').toLowerCase();
@@ -152,7 +137,7 @@ export async function POST(req: NextRequest) {
 
     const returnParam = orderStatusUrl ? `&return_url=${encodeURIComponent(orderStatusUrl)}` : '';
     const payUrl = `${checkoutDomain}/pay/${invoice.id}?theme=dark${returnParam}`;
-    console.log('extension/payment: invoice created', { shop, order_id, invoiceId: invoice.id, orderStatusUrl: orderStatusUrl || '(empty)' });
+
 
     return NextResponse.json(
       { payment_url: payUrl, invoice_id: invoice.id, status: 'pending' },

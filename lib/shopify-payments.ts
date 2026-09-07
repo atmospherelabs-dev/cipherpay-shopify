@@ -12,6 +12,7 @@ async function paymentsGraphQL(
 ): Promise<Record<string, unknown>> {
   const res = await fetch(paymentsApiUrl(shop), {
     method: 'POST',
+    signal: AbortSignal.timeout(15000),
     headers: {
       'Content-Type': 'application/json',
       'X-Shopify-Access-Token': accessToken,

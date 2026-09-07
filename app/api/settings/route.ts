@@ -1,116 +1,47 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getShop, updateShopConfig } from '@/lib/db';
-import crypto from 'crypto';
+import { getShop, updateShopConfig, verifySessionToken } from '@/lib/db';
+import { validateCipherPayApiUrl } from '@/lib/cipherpay';
+import { readSettingsSession } from '@/lib/settings-session';
 
-const SHOPIFY_API_SECRET = process.env.SHOPIFY_API_SECRET!;
-
-function sanitizeSecret(value: unknown): string | undefined {
-  if (typeof value !== 'string') return undefined;
-  const sanitized = value.trim().replace(/[\s\u2028\u2029]+/g, '');
-  return sanitized || undefined;
+async function principal(req: NextRequest): Promise<string | null> {
+  const session = readSettingsSession(req);
+  if (!session || !await verifySessionToken(session.shop, session.token)) return null;
+  return session.shop;
 }
-
-function sanitizeUrl(value: unknown): string | undefined {
-  if (typeof value !== 'string') return undefined;
-  const sanitized = value.trim().replace(/\/+$/, '');
-  return sanitized || undefined;
+function secret(value: unknown): string | undefined {
+  if (typeof value !== 'string' || value === '••••••') return undefined;
+  return value.trim().replace(/[\s\u2028\u2029]+/g, '') || undefined;
 }
-
-function verifyHmac(query: Record<string, string>): boolean {
-  const { hmac, ...rest } = query;
-  if (!hmac) return false;
-
-  const sorted = Object.keys(rest).sort().map(k => `${k}=${rest[k]}`).join('&');
-  const computed = crypto
-    .createHmac('sha256', SHOPIFY_API_SECRET)
-    .update(sorted)
-    .digest('hex');
-
-  try {
-    return crypto.timingSafeEqual(Buffer.from(hmac), Buffer.from(computed));
-  } catch {
-    return false;
-  }
-}
-
-async function authenticateShop(req: NextRequest): Promise<boolean> {
-  const hmac = req.nextUrl.searchParams.get('hmac')
-    || req.headers.get('x-shopify-hmac');
-
-  if (hmac) {
-    const params = Object.fromEntries(req.nextUrl.searchParams.entries());
-    return verifyHmac(params);
-  }
-
-  const sessionToken = req.nextUrl.searchParams.get('session_token');
-  const shop = req.nextUrl.searchParams.get('shop');
-  if (sessionToken && shop) {
-    const { verifySessionToken } = await import('@/lib/db');
-    return verifySessionToken(shop, sessionToken);
-  }
-
-  return false;
-}
-
 export async function GET(req: NextRequest) {
-  const shop = req.nextUrl.searchParams.get('shop');
-  if (!shop) {
-    return NextResponse.json({ error: 'Missing shop' }, { status: 400 });
-  }
-
-  if (!shop.match(/^[a-zA-Z0-9][a-zA-Z0-9-]*\.myshopify\.com$/)) {
-    return NextResponse.json({ error: 'Invalid shop domain' }, { status: 400 });
-  }
-
-  const authenticated = await authenticateShop(req);
-  if (!authenticated) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  }
-
-  const shopData = await getShop(shop);
-  if (!shopData) {
-    return NextResponse.json({ error: 'Shop not found' }, { status: 404 });
-  }
-
+  const shop = await principal(req);
+  if (!shop) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  if (req.nextUrl.searchParams.get('shop') !== shop) return NextResponse.json({ error: 'Shop mismatch' }, { status: 403 });
+  const data = await getShop(shop);
+  if (!data) return NextResponse.json({ error: 'Shop not found' }, { status: 404 });
   const host = process.env.HOST || req.nextUrl.origin;
-
-  return NextResponse.json({
-    shop: shopData.shop,
-    cipherpay_api_key: shopData.cipherpay_api_key ? '••••••' : null,
-    cipherpay_api_url: shopData.cipherpay_api_url,
-    cipherpay_webhook_secret: shopData.cipherpay_webhook_secret ? '••••••' : null,
-    payment_url: host,
-    webhook_url: `${host}/api/webhook/cipherpay`,
-  });
+  return NextResponse.json({ shop, cipherpay_api_key: data.cipherpay_api_key ? '••••••' : null,
+    cipherpay_api_url: data.cipherpay_api_url,
+    cipherpay_webhook_secret: data.cipherpay_webhook_secret ? '••••••' : null,
+    payment_url: host, webhook_url: `${host}/api/webhook/cipherpay`,
+  }, { headers: { 'Cache-Control': 'no-store' } });
 }
-
 export async function POST(req: NextRequest) {
-  const body = await req.json();
-  const { shop, cipherpay_api_key, cipherpay_api_url, cipherpay_webhook_secret } = body;
-
-  if (!shop) {
-    return NextResponse.json({ error: 'Missing shop' }, { status: 400 });
+  // SameSite cookies plus an exact Origin check protect this credential-changing operation.
+  if (req.headers.get('origin') !== new URL(process.env.HOST || req.nextUrl.origin).origin) {
+    return NextResponse.json({ error: 'Invalid origin' }, { status: 403 });
   }
-
-  if (!shop.match(/^[a-zA-Z0-9][a-zA-Z0-9-]*\.myshopify\.com$/)) {
-    return NextResponse.json({ error: 'Invalid shop domain' }, { status: 400 });
+  const shop = await principal(req);
+  if (!shop) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  let body;
+  try { body = await req.json(); } catch { return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 }); }
+  if (body.shop !== shop || req.nextUrl.searchParams.get('shop') !== shop) {
+    return NextResponse.json({ error: 'Shop mismatch' }, { status: 403 });
   }
-
-  const authenticated = await authenticateShop(req);
-  if (!authenticated) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  }
-
-  const shopData = await getShop(shop);
-  if (!shopData) {
-    return NextResponse.json({ error: 'Shop not found. Install the app first.' }, { status: 404 });
-  }
-
-  await updateShopConfig(shop, {
-    cipherpay_api_key: sanitizeSecret(cipherpay_api_key),
-    cipherpay_api_url: sanitizeUrl(cipherpay_api_url),
-    cipherpay_webhook_secret: sanitizeSecret(cipherpay_webhook_secret),
-  });
-
+  if (!await getShop(shop)) return NextResponse.json({ error: 'Shop not found' }, { status: 404 });
+  let apiUrl;
+  try { apiUrl = body.cipherpay_api_url === undefined ? undefined : validateCipherPayApiUrl(body.cipherpay_api_url); }
+  catch { return NextResponse.json({ error: 'Unsupported CipherPay API URL' }, { status: 400 }); }
+  await updateShopConfig(shop, { cipherpay_api_key: secret(body.cipherpay_api_key),
+    cipherpay_api_url: apiUrl, cipherpay_webhook_secret: secret(body.cipherpay_webhook_secret) });
   return NextResponse.json({ ok: true });
 }
