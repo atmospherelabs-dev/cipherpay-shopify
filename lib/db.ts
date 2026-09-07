@@ -558,11 +558,10 @@ export async function migrateOperationalSecrets(): Promise<number> {
         const raw = await redis.get(key);
         const data = typeof raw === 'string' ? JSON.parse(raw) : raw;
         if (data && (data as { encryption_version?: number }).encryption_version !== 1) {
-          const ttl = await redis.ttl(key);
           // Compare-and-set prevents overwriting a concurrent configuration change.
           const encoded = protectSecrets(data as object);
-          migrated += Number(await redis.eval(`local raw = redis.call('get', KEYS[1]); if raw == ARGV[1] then redis.call('set', KEYS[1], ARGV[2]); if tonumber(ARGV[3]) > 0 then redis.call('expire', KEYS[1], ARGV[3]) end; return 1 else return 0 end`,
-            [key], [typeof raw === 'string' ? raw : JSON.stringify(raw), encoded, ttl]));
+          migrated += Number(await redis.eval(`local raw = redis.call('get', KEYS[1]); if raw == ARGV[1] then local ttl = redis.call('pttl', KEYS[1]); redis.call('set', KEYS[1], ARGV[2]); if ttl >= 0 then redis.call('pexpire', KEYS[1], math.max(1, ttl)) end; return 1 else return 0 end`,
+            [key], [typeof raw === 'string' ? raw : JSON.stringify(raw), encoded]));
         }
       }
     } while (cursor !== 0);

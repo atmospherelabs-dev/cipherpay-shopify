@@ -76,3 +76,31 @@ test('JWT verification uses tenant credentials and validates audience/expiry', a
   await assert.rejects(service.verifyShopifySessionClaims(await sign('wrong-client','5m')));
   await assert.rejects(service.verifyShopifySessionClaims(await sign('tenant-client','-1m')));
 });
+
+test('operational credentials are encrypted, tampering fails, and uninstall revokes tenant sessions', async () => {
+  const records = new Map();
+  class Redis {
+    async get(key) { return records.get(key) ?? null; }
+    async set(key,value) { records.set(key,value); return 'OK'; }
+    async del(...keys) { keys.forEach(key=>records.delete(key)); }
+    async scan(cursor,{match}) { const prefix=match.slice(0,-1);return [0,[...records.keys()].filter(key=>key.startsWith(prefix))]; }
+    async smembers() { return []; }
+  }
+  const db=load('lib/db.ts',{'@upstash/redis':{Redis},'@upstash/qstash':{Client:class {}}},{SHOPIFY_CREDENTIALS_KEY:'11'.repeat(32)});
+  await db.saveShop('a.myshopify.com','private-shop-token');
+  const encoded=records.get('shop:a.myshopify.com');
+  assert.ok(!encoded.includes('private-shop-token'));
+  assert.equal(JSON.parse(encoded).encryption_version,1);
+  assert.equal((await db.getShop('a.myshopify.com')).access_token,'private-shop-token');
+  const tampered=JSON.parse(encoded);const parts=tampered.access_token.split(':');parts[2]=Buffer.alloc(16).toString('base64');tampered.access_token=parts.join(':');
+  records.set('shop:a.myshopify.com',JSON.stringify(tampered));
+  await assert.rejects(()=>db.getShop('a.myshopify.com'));
+  records.set('shop:a.myshopify.com',encoded);
+  records.set('st:a.myshopify.com:legacy','valid');records.set('st-v2:a.myshopify.com:new','valid');
+  records.set('st:b.myshopify.com:other','valid');
+  await db.deleteShop('a.myshopify.com');
+  assert.equal(records.has('shop:a.myshopify.com'),false);
+  assert.equal(records.has('st:a.myshopify.com:legacy'),false);
+  assert.equal(records.has('st-v2:a.myshopify.com:new'),false);
+  assert.equal(records.has('st:b.myshopify.com:other'),true);
+});
