@@ -7,7 +7,8 @@
     "build": "next build",
     "start": "next start -p 3002",
     "lint": "next lint",
-    "worker:shopify": "node scripts/shopify-deploy-worker.mjs"
+    "worker:shopify": "node scripts/shopify-deploy-worker.mjs",
+    "test": "node --test tests/payment-visibility.cjs"
   },
   "dependencies": {
     "@upstash/qstash": "^2.11.3",

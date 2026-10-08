@@ -79,30 +79,7 @@ export async function POST(req: NextRequest) {
       ? 'https://testnet.cipherpay.app'
       : 'https://cipherpay.app';
 
-    const existing = await getPaymentSessionByOrderId(shop, order_id);
-    console.log('extension/payment: session lookup', { shop, order_id, found: Boolean(existing), invoiceId: existing?.cipherpay_invoice_id });
-
-    // For existing sessions (polling), return immediately without hitting Shopify API
-    if (existing?.cipherpay_invoice_id) {
-      const payUrl = `${checkoutDomain}/pay/${existing.cipherpay_invoice_id}?theme=dark`;
-      return NextResponse.json(
-        {
-          payment_url: payUrl,
-          invoice_id: existing.cipherpay_invoice_id,
-          status: existing.status,
-        },
-        { headers: corsHeaders() }
-      );
-    }
-
-    // No session yet — fetch order from Shopify to create invoice
-    const lockAcquired = await acquireOrderLock(shop, order_id);
-    if (!lockAcquired) {
-      console.log('extension/payment: lock held by another process, retrying', { shop, order_id });
-      return NextResponse.json({ pending: true }, { status: 200, headers: corsHeaders() });
-    }
-
-    let orderData: { total_price: string; currency: string; gateway?: string; payment_gateway_names?: string[]; line_items?: Array<{ title: string }>; order_status_url?: string } | null = null;
+    let orderData: { total_price: string; currency: string; gateway?: string; payment_gateway_names?: string[]; financial_status?: string; cancelled_at?: string | null; line_items?: Array<{ title: string }>; order_status_url?: string } | null = null;
     try {
       const res = await shopifyAdminApi(shop, shopData.access_token, `orders/${order_id}.json`);
       orderData = res.order;
@@ -123,9 +100,35 @@ export async function POST(req: NextRequest) {
     const isZcash = gateway.includes('zcash') || gateway.includes('zec') || gateway.includes('cipherpay') ||
       paymentMethod.includes('zcash') || paymentMethod.includes('zec') || paymentMethod.includes('cipherpay');
 
-    if (!isZcash) {
-      console.log('extension/payment: not a Zcash payment, skipping', { shop, order_id, gateway, paymentMethod });
+    if (!isZcash || orderData.financial_status !== 'pending' || orderData.cancelled_at) {
+      console.log('extension/payment: no pending Zcash payment, skipping', { shop, order_id });
       return NextResponse.json({ skip: true }, { status: 200, headers: corsHeaders() });
+    }
+
+    const existing = await getPaymentSessionByOrderId(shop, order_id);
+    console.log('extension/payment: session lookup', { shop, order_id, found: Boolean(existing), invoiceId: existing?.cipherpay_invoice_id });
+
+    // Only return a cached payment link after checking the current Shopify order.
+    if (existing?.cipherpay_invoice_id) {
+      if (existing.status === 'confirmed') {
+        return NextResponse.json({ skip: true }, { headers: corsHeaders() });
+      }
+      const payUrl = `${checkoutDomain}/pay/${existing.cipherpay_invoice_id}?theme=dark`;
+      return NextResponse.json(
+        {
+          payment_url: payUrl,
+          invoice_id: existing.cipherpay_invoice_id,
+          status: existing.status,
+        },
+        { headers: corsHeaders() }
+      );
+    }
+
+    // Only acquire an invoice-creation lock after confirming the order is eligible.
+    const lockAcquired = await acquireOrderLock(shop, order_id);
+    if (!lockAcquired) {
+      console.log('extension/payment: lock held by another process, retrying', { shop, order_id });
+      return NextResponse.json({ pending: true }, { status: 200, headers: corsHeaders() });
     }
 
     const amount = parseFloat(orderData.total_price);
