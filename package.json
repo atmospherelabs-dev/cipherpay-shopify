@@ -8,9 +8,10 @@
     "start": "next start -p 3002",
     "lint": "next lint",
     "worker:shopify": "node scripts/shopify-deploy-worker.mjs",
-    "test": "node --test tests/payment-visibility.cjs"
+    "test": "node --test tests/payment-visibility.cjs tests/deploy-worker.test.mjs"
   },
   "dependencies": {
+    "@shopify/cli": "5.0.0",
     "@upstash/qstash": "^2.11.3",
     "@upstash/redis": "^1.34.0",
     "jose": "^6.2.2",

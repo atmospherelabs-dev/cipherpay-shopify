@@ -40,8 +40,14 @@ From the `cipherpay-shopify` repo root:
 
 ```bash
 npm ci
+npm ci --prefix extensions/cipherpay-checkout
 npm run worker:shopify
 ```
+
+The Shopify CLI is pinned in `package.json` and run from `node_modules`, never
+through `npx`, so a new CLI release cannot change deploys until the pin is
+updated. `app deploy` bundles the checkout extension but does not install its
+dependencies; jobs fail with a clear error if they are missing.
 
 ## How it works
 
@@ -49,9 +55,11 @@ npm run worker:shopify
 2. Job data + status stored in Redis; job ID published to QStash
 3. QStash delivers a signed POST to `https://deploy.yourdomain.com/deploy`
 4. Worker verifies the QStash signature, fetches the job from Redis
-5. Writes a temporary `shopify.app.worker-*.toml`
-6. Runs `npx shopify app deploy --allow-updates`
-7. Deletes the temp config and encrypted job payload
+5. Creates a private temp app directory with a generated `shopify.app.worker.toml`
+   and a copy of `extensions/` (the CLI scans its whole app directory, so it
+   never runs against the worker's checkout or release folders)
+6. Runs the pinned `shopify app deploy --allow-updates` there
+7. Deletes the temp directory and encrypted job payload
 8. Stores only redacted deploy status
 
 QStash retries delivery on 5xx responses (up to 2 retries). If the job data
@@ -76,6 +84,9 @@ deploy.yourdomain.com {
 - QStash signature verification rejects unsigned or forged requests
 - The `/deploy` endpoint is the only accepted path; all others return 404
 - Encrypted automation tokens are decrypted in memory and wiped after use
-- Deploy output is sanitized to strip any leaked tokens before storage
+- Deploy output is sanitized to strip tokens and worker filesystem paths before storage
+- Merchant tokens starting with `atkn_` are passed as `SHOPIFY_APP_AUTOMATION_TOKEN`;
+  all others (Shopify service account tokens) as `SHOPIFY_SERVICE_ACCOUNT_TOKEN`.
+  The CLI gets only that one token variable and none of the worker's own secrets
 
 Run as a dedicated non-root user on the VPS.

@@ -1,8 +1,12 @@
 #!/usr/bin/env node
 import crypto from 'crypto';
 import fs from 'fs/promises';
+import { realpathSync } from 'fs';
+import os from 'os';
 import path from 'path';
 import { createServer } from 'node:http';
+import { createRequire } from 'node:module';
+import { fileURLToPath } from 'node:url';
 import { spawn } from 'child_process';
 import { Redis } from '@upstash/redis';
 import { Receiver } from '@upstash/qstash';
@@ -18,6 +22,31 @@ const receiver = new Receiver({
 });
 
 const PORT = Number(process.env.DEPLOY_WORKER_PORT || 9100);
+
+// Resolve the app source and the pinned Shopify CLI from this script, not from
+// the worker's working directory.
+const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const EXTENSIONS_DIR = path.join(REPO_ROOT, 'extensions');
+const SHOPIFY_CLI_BIN = path.join(
+  path.dirname(createRequire(import.meta.url).resolve('@shopify/cli/package.json')),
+  'bin',
+  'run.js'
+);
+
+const SHOPIFY_TOKEN_ENV_VARS = [
+  'SHOPIFY_SERVICE_ACCOUNT_TOKEN',
+  'SHOPIFY_APP_AUTOMATION_TOKEN',
+  'SHOPIFY_CLI_PARTNERS_TOKEN',
+];
+
+// Worker secrets the CLI never needs.
+const WORKER_SECRET_ENV_VARS = [
+  'SHOPIFY_CREDENTIALS_KEY',
+  'UPSTASH_REDIS_REST_URL',
+  'UPSTASH_REDIS_REST_TOKEN',
+  'QSTASH_CURRENT_SIGNING_KEY',
+  'QSTASH_NEXT_SIGNING_KEY',
+];
 
 function requireEnv(name) {
   const value = process.env[name];
@@ -83,23 +112,64 @@ async function updateStatus(id, patch) {
   }), { ex: 86400 });
 }
 
-function sanitizeOutput(output, token) {
-  return output
-    .replaceAll(token, '[redacted]')
+export function sanitizeOutput(output, token) {
+  const redacted = token ? output.replaceAll(token, '[redacted]') : output;
+  return redacted
     .replace(/shpss_[a-zA-Z0-9]+/g, '[redacted]')
-    .replace(/atkn_[a-zA-Z0-9]+/g, '[redacted]');
+    .replace(/atkn_[a-zA-Z0-9]+/g, '[redacted]')
+    // Deploy status is shown to merchants; keep worker filesystem paths out of it.
+    .replace(/(^|[\s'"`(=:])\/(?:[\w.@+-]+\/)*[\w.@+-]+/gm, '$1[path]');
 }
 
-async function runShopifyDeploy(job, automationToken) {
-  const repoRoot = process.cwd();
-  const configName = `shopify.app.worker-${job.id}.toml`;
-  const configPath = path.join(repoRoot, configName);
+// Shopify now issues service account tokens; App Automation Tokens keep their
+// atkn_ prefix. The CLI rejects more than one token variable at once.
+export function shopifyTokenEnv(token) {
+  const env = { ...process.env };
+  for (const name of [...SHOPIFY_TOKEN_ENV_VARS, ...WORKER_SECRET_ENV_VARS]) delete env[name];
+  const name = token.startsWith('atkn_') ? 'SHOPIFY_APP_AUTOMATION_TOKEN' : 'SHOPIFY_SERVICE_ACCOUNT_TOKEN';
+  env[name] = token;
+  return env;
+}
+
+// `app deploy` bundles extensions but does not install their dependencies.
+async function assertExtensionDependencies(extensionsDir) {
+  for (const entry of await fs.readdir(extensionsDir, { withFileTypes: true })) {
+    if (!entry.isDirectory()) continue;
+    const extensionDir = path.join(extensionsDir, entry.name);
+    const hasPackage = await fs.access(path.join(extensionDir, 'package.json')).then(() => true, () => false);
+    const hasModules = await fs.access(path.join(extensionDir, 'node_modules')).then(() => true, () => false);
+    if (hasPackage && !hasModules) {
+      throw new Error(`Deploy worker is missing dependencies for extension ${entry.name}`);
+    }
+  }
+}
+
+// The CLI searches the whole app directory for web and extension configs, so
+// deploy from a private directory holding only the generated config and the
+// extensions.
+export async function prepareAppDirectory(config, extensionsDir = EXTENSIONS_DIR) {
+  await assertExtensionDependencies(extensionsDir);
+  const appDir = await fs.mkdtemp(path.join(os.tmpdir(), 'cipherpay-shopify-deploy-'));
+  await fs.writeFile(path.join(appDir, 'shopify.app.worker.toml'), config, { mode: 0o600 });
+  await fs.writeFile(
+    path.join(appDir, 'package.json'),
+    `${JSON.stringify({ name: 'cipherpay-shopify-deploy', private: true }, null, 2)}\n`
+  );
+  await fs.cp(extensionsDir, path.join(appDir, 'extensions'), {
+    recursive: true,
+    filter: (source) => path.basename(source) !== 'dist',
+  });
+  return appDir;
+}
+
+export async function runShopifyDeploy(job, automationToken) {
   const appUrl = `${job.host}/api/auth/tenant/${job.client_id}`;
   const redirectUrl = `${job.host}/api/auth/callback`;
 
-  const config = `client_id = "${job.client_id}"
-name = "${job.app_name}"
-application_url = "${appUrl}"
+  // JSON string literals are valid TOML basic strings.
+  const config = `client_id = ${JSON.stringify(job.client_id)}
+name = ${JSON.stringify(job.app_name)}
+application_url = ${JSON.stringify(appUrl)}
 embedded = false
 
 [webhooks]
@@ -111,29 +181,25 @@ optional_scopes = [ ]
 use_legacy_install_flow = false
 
 [auth]
-redirect_urls = [ "${redirectUrl}" ]
+redirect_urls = [ ${JSON.stringify(redirectUrl)} ]
 `;
 
-  await fs.writeFile(configPath, config, { mode: 0o600 });
+  const appDir = await prepareAppDirectory(config);
 
   try {
-    const env = {
-      ...process.env,
-      SHOPIFY_CLI_PARTNERS_TOKEN: automationToken,
-      SHOPIFY_APP_AUTOMATION_TOKEN: automationToken,
-    };
-
     const result = await new Promise((resolve) => {
-      const child = spawn('npx', [
-        'shopify',
+      const child = spawn(process.execPath, [
+        SHOPIFY_CLI_BIN,
         'app',
         'deploy',
+        '--path',
+        appDir,
         '--config',
-        configName,
+        'worker',
         '--allow-updates',
       ], {
-        cwd: repoRoot,
-        env,
+        cwd: appDir,
+        env: shopifyTokenEnv(automationToken),
         stdio: ['ignore', 'pipe', 'pipe'],
       });
 
@@ -141,6 +207,7 @@ redirect_urls = [ "${redirectUrl}" ]
       let stderr = '';
       child.stdout.on('data', (chunk) => { stdout += chunk.toString(); });
       child.stderr.on('data', (chunk) => { stderr += chunk.toString(); });
+      child.on('error', (error) => resolve({ code: -1, stdout, stderr: `${stderr}\n${error.message}` }));
       child.on('close', (code) => resolve({ code, stdout, stderr }));
     });
 
@@ -149,7 +216,7 @@ redirect_urls = [ "${redirectUrl}" ]
       throw new Error(`Shopify deploy failed with code ${result.code}: ${output}`);
     }
   } finally {
-    await fs.rm(configPath, { force: true });
+    await fs.rm(appDir, { recursive: true, force: true });
   }
 }
 
@@ -247,4 +314,7 @@ function main() {
   });
 }
 
-main();
+// Compare real paths: Node resolves symlinks (e.g. a release symlink) in import.meta.url.
+if (process.argv[1] && realpathSync(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  main();
+}
