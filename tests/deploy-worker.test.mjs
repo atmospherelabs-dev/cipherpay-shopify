@@ -24,7 +24,10 @@ async function fixtureExtensions({ withModules }) {
   await fs.writeFile(path.join(extension, 'package.json'), '{}\n');
   await fs.writeFile(path.join(extension, 'src', 'ThankYouPage.jsx'), '');
   await fs.writeFile(path.join(extension, 'dist', 'stale.js'), '');
-  if (withModules) await fs.mkdir(path.join(extension, 'node_modules', 'preact'), { recursive: true });
+  if (withModules) {
+    await fs.mkdir(path.join(extension, 'node_modules', 'preact', 'dist'), { recursive: true });
+    await fs.writeFile(path.join(extension, 'node_modules', 'preact', 'dist', 'preact.module.js'), '');
+  }
   return dir;
 }
 
@@ -37,6 +40,8 @@ test('deploys from an isolated directory with only the config and extensions', a
     assert.equal(await fs.readFile(path.join(appDir, 'shopify.app.worker.toml'), 'utf8'), 'client_id = "x"\n');
     const copied = path.join(appDir, 'extensions', 'cipherpay-checkout');
     assert.deepEqual((await fs.readdir(copied)).sort(), ['node_modules', 'package.json', 'shopify.extension.toml', 'src']);
+    // Dependency build output must survive; esbuild resolves preact from it.
+    await fs.access(path.join(copied, 'node_modules', 'preact', 'dist', 'preact.module.js'));
   } finally {
     await fs.rm(appDir, { recursive: true, force: true });
     await fs.rm(extensions, { recursive: true, force: true });

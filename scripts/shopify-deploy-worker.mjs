@@ -155,9 +155,14 @@ export async function prepareAppDirectory(config, extensionsDir = EXTENSIONS_DIR
     path.join(appDir, 'package.json'),
     `${JSON.stringify({ name: 'cipherpay-shopify-deploy', private: true }, null, 2)}\n`
   );
+  // Skip only each extension's own build output (extensions/<name>/dist).
+  // Dependencies ship their code in node_modules/**/dist and must be copied.
   await fs.cp(extensionsDir, path.join(appDir, 'extensions'), {
     recursive: true,
-    filter: (source) => path.basename(source) !== 'dist',
+    filter: (source) => {
+      const parts = path.relative(extensionsDir, source).split(path.sep);
+      return !(parts.length === 2 && parts[1] === 'dist');
+    },
   });
   return appDir;
 }
