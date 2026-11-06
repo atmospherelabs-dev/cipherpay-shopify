@@ -54,7 +54,10 @@ export interface ShopifyDeployStatus {
   id: string;
   client_id: string;
   app_name: string;
-  status: 'queued' | 'processing' | 'deployed' | 'failed';
+  // action_required: the version exists but Shopify did not release it.
+  status: 'queued' | 'processing' | 'deployed' | 'action_required' | 'failed';
+  error_code?: 'network_access_required' | 'release_failed' | null;
+  version?: { name: string | null; url: string | null } | null;
   created_at: string;
   updated_at: string;
   error: string | null;

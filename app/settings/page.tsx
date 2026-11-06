@@ -221,9 +221,20 @@ export default function SettingsPage() {
                 <p>
                   <strong style={{ color: '#a1a1aa' }}>2.</strong> Go to <strong style={{ color: '#a1a1aa' }}>Settings &rarr; Checkout &rarr; Customize</strong>, switch to the <strong style={{ color: '#a1a1aa' }}>Thank you</strong> page, and add the <strong style={{ color: '#00D4FF' }}>CipherPay Checkout</strong> app block.
                 </p>
-                <p style={{ marginBottom: 0 }}>
+                <p>
                   <strong style={{ color: '#a1a1aa' }}>3.</strong> Place a test order to verify. Customers select <strong style={{ color: '#a1a1aa' }}>Pay with Zcash (ZEC)</strong>, then click <strong style={{ color: '#00D4FF' }}>Pay with CipherPay</strong> on the Thank You page.
                 </p>
+                <div style={{
+                  marginTop: 4, padding: '10px 12px', border: '1px solid #27272a',
+                  borderRadius: 4, backgroundColor: '#111113',
+                }}>
+                  <strong style={{ color: '#a1a1aa' }}>No button after a test order?</strong>{' '}
+                  Shopify only publishes the CipherPay block once network access is allowed. In the{' '}
+                  <a href="https://partners.shopify.com" target="_blank" rel="noreferrer" style={{ color: '#00D4FF' }}>Partner Dashboard</a>,
+                  open <strong style={{ color: '#a1a1aa' }}>Apps &rarr; your CipherPay app &rarr; API access requests</strong> and click{' '}
+                  <strong style={{ color: '#a1a1aa' }}>Allow network access</strong>. Then release the newest version in the Dev Dashboard
+                  (Versions &rarr; newest &rarr; Release) and place another order.
+                </div>
               </div>
             </div>
 

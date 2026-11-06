@@ -25,7 +25,7 @@ export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
 
-    // Try JWT from header or body; fall back to shop domain validation
+    // The shop comes only from a verified Shopify session token, never the body.
     const authHeader = req.headers.get('Authorization');
     const sessionToken = (authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null)
       || body.session_token
@@ -36,14 +36,10 @@ export async function POST(req: NextRequest) {
       try {
         verifiedShop = await verifyShopifySessionToken(sessionToken);
       } catch (err) {
-        console.warn('extension/payment: JWT failed, trying shop fallback', err);
-      }
-    }
-
-    if (!verifiedShop && body.shop) {
-      const fallbackShop = await getShop(body.shop);
-      if (fallbackShop?.cipherpay_api_key) {
-        verifiedShop = body.shop;
+        console.warn('extension/payment: session token rejected', {
+          shop: typeof body.shop === 'string' ? body.shop : null,
+          reason: err instanceof Error ? err.message : 'unknown',
+        });
       }
     }
 

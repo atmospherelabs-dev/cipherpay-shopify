@@ -8,6 +8,22 @@ import {
   saveShop,
 } from '@/lib/db';
 
+function escapeHtml(value: string): string {
+  return value.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
+}
+
+function installErrorPage(title: string, body: string): NextResponse {
+  const html = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>CipherPay install error</title></head>
+<body style="margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;background:#0a0a0a;color:#ccc;font:14px/1.6 ui-monospace,Menlo,monospace;padding:16px">
+<main style="max-width:560px;border:1px solid #333;border-radius:8px;padding:28px">
+<h1 style="font-size:16px;color:#f87171;margin:0 0 12px">${escapeHtml(title)}</h1>
+<p style="margin:0 0 16px">${escapeHtml(body)}</p>
+<a href="https://www.cipherpay.app/en/dashboard" style="color:#22d3ee">Open CipherPay dashboard →</a>
+</main></body></html>`;
+  return new NextResponse(html, { status: 403, headers: { 'Content-Type': 'text/html; charset=utf-8' } });
+}
+
 export async function GET(req: NextRequest) {
   const params = Object.fromEntries(req.nextUrl.searchParams.entries());
   const { shop, code, state } = params;
@@ -38,6 +54,15 @@ export async function GET(req: NextRequest) {
   const clientId = appCredentials?.client_id;
 
   if (!verifyHmac(params, clientSecret)) {
+    if (clientId) {
+      // Almost always a Client Secret copied from a different Shopify app.
+      return installErrorPage(
+        'Client Secret does not match this app',
+        `Shopify signed this install with app ${clientId}, but the Client Secret saved in CipherPay belongs to a different app. ` +
+          'In the Shopify Dev Dashboard, open the app with this Client ID, copy its Client Secret from Settings, ' +
+          'then run Shopify setup again in your CipherPay dashboard (Settings → Integrations → Shopify) and reinstall.'
+      );
+    }
     return NextResponse.json({ error: 'HMAC verification failed' }, { status: 403 });
   }
 

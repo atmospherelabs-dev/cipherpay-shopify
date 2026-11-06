@@ -167,6 +167,51 @@ export async function prepareAppDirectory(config, extensionsDir = EXTENSIONS_DIR
   return appDir;
 }
 
+const NETWORK_ACCESS_PATTERN = /network access/i;
+
+function lastJsonObject(text) {
+  // The CLI may print progress before its JSON; take the last top-level object.
+  for (let start = text.lastIndexOf('\n{'); start !== -1; start = text.lastIndexOf('\n{', start - 1)) {
+    try { return JSON.parse(text.slice(start + 1)); } catch { /* keep scanning */ }
+  }
+  try { return JSON.parse(text.trim()); } catch { return null; }
+}
+
+// A successful `app deploy` exit does not mean the version reached merchants:
+// Shopify can create the version and refuse to release it (status "partial").
+export function parseDeployResult(stdout, stderr = '') {
+  const parsed = lastJsonObject(stdout);
+  const deployment = parsed?.deployment;
+  const version = deployment?.version
+    ? { name: deployment.version.name ?? null, url: deployment.version.url ?? null }
+    : null;
+  const message = Array.isArray(parsed?.errors)
+    ? parsed.errors.map((e) => e?.message).filter(Boolean).join('\n')
+    : '';
+
+  if (deployment && typeof deployment.released === 'boolean') {
+    if (deployment.released) return { released: true, version, errorCode: null, message: null };
+    return {
+      released: false,
+      version,
+      errorCode: NETWORK_ACCESS_PATTERN.test(message) ? 'network_access_required' : 'release_failed',
+      message: message || 'Shopify created the app version but did not release it.',
+    };
+  }
+
+  // Fall back to the human-readable output if JSON was not produced.
+  const text = `${stdout}\n${stderr}`;
+  if (/not released/i.test(text)) {
+    return {
+      released: false,
+      version,
+      errorCode: NETWORK_ACCESS_PATTERN.test(text) ? 'network_access_required' : 'release_failed',
+      message: 'Shopify created the app version but did not release it.',
+    };
+  }
+  return { released: true, version, errorCode: null, message: null };
+}
+
 export async function runShopifyDeploy(job, automationToken) {
   const appUrl = `${job.host}/api/auth/tenant/${job.client_id}`;
   const redirectUrl = `${job.host}/api/auth/callback`;
@@ -202,6 +247,7 @@ redirect_urls = [ ${JSON.stringify(redirectUrl)} ]
         '--config',
         'worker',
         '--allow-updates',
+        '--json',
       ], {
         cwd: appDir,
         env: shopifyTokenEnv(automationToken),
@@ -220,6 +266,9 @@ redirect_urls = [ ${JSON.stringify(redirectUrl)} ]
       const output = sanitizeOutput(`${result.stdout}\n${result.stderr}`, automationToken).slice(-4000);
       throw new Error(`Shopify deploy failed with code ${result.code}: ${output}`);
     }
+    const outcome = parseDeployResult(result.stdout, result.stderr);
+    if (outcome.message) outcome.message = sanitizeOutput(outcome.message, automationToken).slice(0, 2000);
+    return outcome;
   } finally {
     await fs.rm(appDir, { recursive: true, force: true });
   }
@@ -238,9 +287,19 @@ async function processJob(id) {
   let automationToken = '';
   try {
     automationToken = decryptSecret(job.encrypted_automation_token);
-    await runShopifyDeploy(job, automationToken);
-    await updateStatus(id, { status: 'deployed', error: null });
-    console.log(`Deploy job ${id} completed successfully`);
+    const outcome = await runShopifyDeploy(job, automationToken);
+    if (outcome.released) {
+      await updateStatus(id, { status: 'deployed', error: null, error_code: null, version: outcome.version });
+      console.log(`Deploy job ${id} released ${outcome.version?.name ?? 'a new version'}`);
+    } else {
+      await updateStatus(id, {
+        status: 'action_required',
+        error: outcome.message,
+        error_code: outcome.errorCode,
+        version: outcome.version,
+      });
+      console.warn(`Deploy job ${id} created ${outcome.version?.name ?? 'a version'} but it was not released (${outcome.errorCode})`);
+    }
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown deploy error';
     await updateStatus(id, { status: 'failed', error: sanitizeOutput(message, automationToken).slice(0, 4000) });

@@ -13,7 +13,7 @@ Object.assign(process.env, {
   SHOPIFY_CLI_PARTNERS_TOKEN: 'inherited-partners-token',
 });
 
-const { prepareAppDirectory, sanitizeOutput, shopifyTokenEnv } = await import('../scripts/shopify-deploy-worker.mjs');
+const { parseDeployResult, prepareAppDirectory, sanitizeOutput, shopifyTokenEnv } = await import('../scripts/shopify-deploy-worker.mjs');
 
 async function fixtureExtensions({ withModules }) {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'deploy-worker-fixture-'));
@@ -80,4 +80,31 @@ test('merchant-facing errors hide tokens and worker paths but keep URLs', () => 
     output,
     "EACCES: permission denied, scandir '[path]' token [redacted] [redacted] see https://shopify.dev/docs/apps"
   );
+});
+
+test('a version Shopify refused to release is reported as needing network access', () => {
+  const stdout = `Bundling...\n${JSON.stringify({
+    app: { name: 'CipherPay', clientId: 'x' },
+    deployment: { released: false, version: { gid: 'g', name: 'cipherpay-2', message: null, url: 'https://dev.shopify.com/v/2' } },
+    status: 'partial',
+    errors: [{ type: 'abort', message: 'Network access must be requested and approved in order for the cipherpay-checkout extension to be published.' }],
+  }, null, 2)}\n`;
+  assert.deepEqual(parseDeployResult(stdout), {
+    released: false,
+    version: { name: 'cipherpay-2', url: 'https://dev.shopify.com/v/2' },
+    errorCode: 'network_access_required',
+    message: 'Network access must be requested and approved in order for the cipherpay-checkout extension to be published.',
+  });
+});
+
+test('other unreleased versions are release failures, released versions succeed', () => {
+  const partial = JSON.stringify({ deployment: { released: false, version: { name: 'v3', url: null } }, status: 'partial', errors: [{ message: 'Something else' }] });
+  assert.equal(parseDeployResult(partial).errorCode, 'release_failed');
+  const ok = JSON.stringify({ deployment: { released: true, version: { name: 'v4', url: 'u' } }, status: 'success' });
+  assert.deepEqual(parseDeployResult(ok), { released: true, version: { name: 'v4', url: 'u' }, errorCode: null, message: null });
+});
+
+test('falls back to the text output when the CLI prints no JSON', () => {
+  assert.equal(parseDeployResult('New version created, but not released.\n  Network access must be requested').errorCode, 'network_access_required');
+  assert.equal(parseDeployResult('New version released to users.').released, true);
 });
